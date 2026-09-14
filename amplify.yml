@@ -7,6 +7,11 @@ backend:
         - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
 frontend:
   phases:
+    preBuild:
+      commands:
+        # Vite inlines import.meta.env.VITE_* at build time, so expose the
+        # Amplify console env vars to the build by writing them into .env.
+        - env | grep -e VITE_ >> .env.production || true
     build:
       commands:
         - npm run build
