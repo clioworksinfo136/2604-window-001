@@ -16,7 +16,7 @@ Location: a
       email: a.string(),
       comments: a.string(),
     })
-    .authorization((allow) => [allow.authenticated()]),  
+    .authorization((allow) => [allow.publicApiKey()]),  
 Project: a
     .model({
       locationid: a.integer().required(),
@@ -27,19 +27,19 @@ Project: a
       description: a.string(),
       phase: a.string().required(),
     })
-    .authorization((allow) => [allow.authenticated()]),
+    .authorization((allow) => [allow.publicApiKey()]),
 Task: a
     .model({
       taskid: a.integer().required(),
       task: a.string(),
     })
-    .authorization((allow) => [allow.authenticated()]),
+    .authorization((allow) => [allow.publicApiKey()]),
 Phase: a
     .model({
       phaseid: a.integer().required(),
       phase: a.string(),
     })
-    .authorization((allow) => [allow.authenticated()]),
+    .authorization((allow) => [allow.publicApiKey()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;
