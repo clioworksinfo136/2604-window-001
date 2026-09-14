@@ -1,33 +1,44 @@
 import { useEffect, useState } from "react";
 import type { Schema } from "../amplify/data/resource";
 import { generateClient } from "aws-amplify/data";
+import MapView from "./MapView";
 
 const client = generateClient<Schema>();
 
 function App() {
-  const [todos, setTodos] = useState<Array<Schema["Todo"]["type"]>>([]);
+  const [locations, setLocations] = useState<
+    Array<Schema["Location"]["type"]>
+  >([]);
 
   useEffect(() => {
-    client.models.Todo.observeQuery().subscribe({
-      next: (data) => setTodos([...data.items]),
+    client.models.Location.observeQuery().subscribe({
+      next: (data) => setLocations([...data.items]),
     });
   }, []);
 
-  function createTodo() {
-    client.models.Todo.create({ content: window.prompt("Todo content") });
+  function createLocation() {
+    const address = window.prompt("Location address");
+    if (!address) return;
+    client.models.Location.create({
+      locationid: Date.now(),
+      address,
+    });
   }
 
   return (
     <main>
-      <h1>My todos</h1>
-      <button onClick={createTodo}>+ new</button>
+      <h1>Hollywood, Florida</h1>
+      <MapView />
+
+      <h1>My locations</h1>
+      <button onClick={createLocation}>+ new</button>
       <ul>
-        {todos.map((todo) => (
-          <li key={todo.id}>{todo.content}</li>
+        {locations.map((location) => (
+          <li key={location.id}>{location.address ?? "(no address)"}</li>
         ))}
       </ul>
       <div>
-        🥳 App successfully hosted. Try creating a new todo.
+        🥳 App successfully hosted. Try creating a new location.
         <br />
         <a href="https://docs.amplify.aws/react/start/quickstart/#make-frontend-updates">
           Review next step of this tutorial.
