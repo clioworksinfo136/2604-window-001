@@ -1,61 +1,56 @@
 import { useEffect, useState } from "react";
+import { APIProvider } from "@vis.gl/react-google-maps";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
 import MapView from "./MapView";
+import ControlPanel from "./ControlPanel";
 import TaskModal from "./TaskModal";
+
+const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
 function App() {
   const [locations, setLocations] = useState<
     Array<Schema["Location"]["type"]>
   >([]);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const [searched, setSearched] = useState<google.maps.LatLngLiteral | null>(
+    null
+  );
 
   useEffect(() => {
-    client.models.Location.observeQuery().subscribe({
+    const sub = client.models.Location.observeQuery().subscribe({
       next: (data) => setLocations([...data.items]),
     });
+    return () => sub.unsubscribe();
   }, []);
 
   function createLocation() {
     const address = window.prompt("Location address");
     if (!address) return;
-    client.models.Location.create({
-      locationid: Date.now(),
-      address,
-    });
+    client.models.Location.create({ locationid: Date.now(), address });
+  }
+
+  if (!apiKey) {
+    return (
+      <div style={{ padding: "1rem", border: "1px solid #ccc", borderRadius: 8 }}>
+        Missing <code>VITE_GOOGLE_MAPS_API_KEY</code>. Add it to a{" "}
+        <code>.env.local</code> file to display the map.
+      </div>
+    );
   }
 
   return (
-    <>
-      <MapView />
-
-      <main
-        style={{
-          position: "fixed",
-          top: 16,
-          left: 16,
-          zIndex: 1,
-          maxWidth: 320,
-          padding: "1rem",
-          background: "rgba(255, 255, 255, 0.92)",
-          borderRadius: 12,
-          boxShadow: "0 2px 12px rgba(0, 0, 0, 0.25)",
-          textAlign: "left",
-        }}
-      >
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={createLocation}>Location</button>
-          <button onClick={() => setTasksOpen(true)}>Task</button>
-        </div>
-        <ul>
-          {locations.map((location) => (
-            <li key={location.id}>{location.address ?? "(no address)"}</li>
-          ))}
-        </ul>
-      </main>
-
+    <APIProvider apiKey={apiKey}>
+      <MapView searched={searched} />
+      <ControlPanel
+        onCreateLocation={createLocation}
+        onOpenTasks={() => setTasksOpen(true)}
+        onPlace={setSearched}
+        onClear={() => setSearched(null)}
+        locations={locations}
+      />
       {tasksOpen && <TaskModal onClose={() => setTasksOpen(false)} />}
-    </>
+    </APIProvider>
   );
 }
 
