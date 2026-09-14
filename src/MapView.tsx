@@ -17,7 +17,7 @@ function MapView() {
 
   return (
     <APIProvider apiKey={apiKey}>
-      <div style={{ width: "100%", height: "500px" }}>
+      <div style={{ position: "fixed", inset: 0, width: "100vw", height: "100dvh" }}>
         <Map
           defaultCenter={HOLLYWOOD_FL}
           defaultZoom={14}

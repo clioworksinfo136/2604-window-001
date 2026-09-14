@@ -26,25 +26,34 @@ function App() {
   }
 
   return (
-    <main>
-      <h1>Hollywood, Florida</h1>
+    <>
       <MapView />
 
-      <h1>My locations</h1>
-      <button onClick={createLocation}>+ new</button>
-      <ul>
-        {locations.map((location) => (
-          <li key={location.id}>{location.address ?? "(no address)"}</li>
-        ))}
-      </ul>
-      <div>
-        🥳 App successfully hosted. Try creating a new location.
-        <br />
-        <a href="https://docs.amplify.aws/react/start/quickstart/#make-frontend-updates">
-          Review next step of this tutorial.
-        </a>
-      </div>
-    </main>
+      <main
+        style={{
+          position: "fixed",
+          top: 16,
+          left: 16,
+          zIndex: 1,
+          maxWidth: 320,
+          padding: "1rem",
+          background: "rgba(255, 255, 255, 0.92)",
+          borderRadius: 12,
+          boxShadow: "0 2px 12px rgba(0, 0, 0, 0.25)",
+          textAlign: "left",
+        }}
+      >
+        <h1 style={{ margin: "0 0 0.5rem", fontSize: "1.25rem" }}>
+          Hollywood, Florida
+        </h1>
+        <button onClick={createLocation}>+ new location</button>
+        <ul>
+          {locations.map((location) => (
+            <li key={location.id}>{location.address ?? "(no address)"}</li>
+          ))}
+        </ul>
+      </main>
+    </>
   );
 }
 
