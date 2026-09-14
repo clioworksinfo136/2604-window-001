@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import type { Schema } from "../amplify/data/resource";
-import { generateClient } from "aws-amplify/data";
+import { client } from "./client";
 import MapView from "./MapView";
-
-const client = generateClient<Schema>();
+import TaskModal from "./TaskModal";
 
 function App() {
   const [locations, setLocations] = useState<
     Array<Schema["Location"]["type"]>
   >([]);
+  const [tasksOpen, setTasksOpen] = useState(false);
 
   useEffect(() => {
     client.models.Location.observeQuery().subscribe({
@@ -43,16 +43,18 @@ function App() {
           textAlign: "left",
         }}
       >
-        <h1 style={{ margin: "0 0 0.5rem", fontSize: "1.25rem" }}>
-          Hollywood, Florida
-        </h1>
-        <button onClick={createLocation}>+ new location</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={createLocation}>Location</button>
+          <button onClick={() => setTasksOpen(true)}>Task</button>
+        </div>
         <ul>
           {locations.map((location) => (
             <li key={location.id}>{location.address ?? "(no address)"}</li>
           ))}
         </ul>
       </main>
+
+      {tasksOpen && <TaskModal onClose={() => setTasksOpen(false)} />}
     </>
   );
 }
