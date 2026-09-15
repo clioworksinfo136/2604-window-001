@@ -10,6 +10,8 @@ const schema = a.schema({
 Location: a
     .model({
       locationid: a.integer().required(),
+      longitude: a.float(),
+      latitude: a.float(),
       contact: a.string(),
       address: a.string(),
       phone: a.string(),
