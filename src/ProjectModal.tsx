@@ -6,6 +6,7 @@ import PhotoModal from "./PhotoModal";
 type Location = Schema["Location"]["type"];
 type Project = Schema["Project"]["type"];
 type Task = Schema["Task"]["type"];
+type Phase = Schema["Phase"]["type"];
 
 function errMsg(e: unknown) {
   return e instanceof Error ? e.message : String(e);
@@ -21,6 +22,7 @@ function ProjectModal({
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [phases, setPhases] = useState<Phase[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">(
     "loading"
   );
@@ -62,6 +64,18 @@ function ProjectModal({
     return () => sub.unsubscribe();
   }, []);
 
+  // Phases come from the Phase table and populate the Phase dropdown.
+  useEffect(() => {
+    const sub = client.models.Phase.observeQuery().subscribe({
+      next: ({ items }) =>
+        setPhases(
+          [...items].sort((a, b) => (a.phaseid ?? 0) - (b.phaseid ?? 0))
+        ),
+      error: () => setPhases([]),
+    });
+    return () => sub.unsubscribe();
+  }, []);
+
   // Known task names, plus whatever the row already holds so an existing
   // value is never silently dropped.
   const taskOptions = Array.from(
@@ -69,6 +83,29 @@ function ProjectModal({
       [...tasks.map((t) => t.task ?? ""), draft.task].filter((t) => t !== "")
     )
   ).sort((a, b) => a.localeCompare(b));
+
+  // Phase order follows phaseid; keep any existing value as an option.
+  const phaseNames = phases.map((p) => p.phase ?? "").filter((p) => p !== "");
+  const phaseOptions = phaseNames.includes(draft.phase)
+    ? phaseNames
+    : draft.phase
+      ? [...phaseNames, draft.phase]
+      : phaseNames;
+
+  const phaseSelect = (
+    <select
+      style={editInput}
+      value={draft.phase}
+      onChange={(e) => setDraft({ ...draft, phase: e.target.value })}
+    >
+      <option value="">— select —</option>
+      {phaseOptions.map((p) => (
+        <option key={p} value={p}>
+          {p}
+        </option>
+      ))}
+    </select>
+  );
 
   const taskSelect = (
     <select
@@ -100,7 +137,8 @@ function ProjectModal({
     setEditingId("new");
     setDraft({
       project: "",
-      phase: "New",
+      // Default to the first configured phase so the required field starts valid.
+      phase: phases[0]?.phase ?? "",
       startdate: "",
       enddate: "",
       task: "",
@@ -266,7 +304,7 @@ function ProjectModal({
             <thead>
               <tr>
                 <th style={cellHead}>Project</th>
-                <th style={cellHead}>Phase</th>
+                <th style={{ ...cellHead, minWidth: 150 }}>Phase</th>
                 <th style={cellHead}>Start</th>
                 <th style={cellHead}>End</th>
                 <th style={{ ...cellHead, minWidth: 130 }}>Task</th>
@@ -288,13 +326,7 @@ function ProjectModal({
                     />
                   </td>
                   <td style={cell}>
-                    <input
-                      style={editInput}
-                      value={draft.phase}
-                      onChange={(e) =>
-                        setDraft({ ...draft, phase: e.target.value })
-                      }
-                    />
+                    {phaseSelect}
                   </td>
                   <td style={cell}>
                     <input
@@ -346,13 +378,7 @@ function ProjectModal({
                       />
                     </td>
                     <td style={cell}>
-                      <input
-                        style={editInput}
-                        value={draft.phase}
-                        onChange={(e) =>
-                          setDraft({ ...draft, phase: e.target.value })
-                        }
-                      />
+                      {phaseSelect}
                     </td>
                     <td style={cell}>
                       <input
