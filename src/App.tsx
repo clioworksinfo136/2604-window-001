@@ -3,6 +3,7 @@ import { APIProvider } from "@vis.gl/react-google-maps";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
 import MapView from "./MapView";
+import type { LocationEdits } from "./MapView";
 import ControlPanel from "./ControlPanel";
 import TaskModal from "./TaskModal";
 import ProjectModal from "./ProjectModal";
@@ -73,30 +74,26 @@ function App() {
     }
   }
 
-  function createProject(location: Schema["Location"]["type"]) {
-    const name = window.prompt("New project name for this location:");
-    if (!name) return;
-    client.models.Project.create({
-      locationid: location.locationid ?? 0,
-      project: name,
-      phase: "New",
-    })
-      .then(({ errors }) => {
-        if (errors?.length) {
-          alert(
-            "Could not create project: " +
-              errors.map((e) => e.message).join("; ")
-          );
-        } else {
-          alert(`Project "${name}" created at Location ${location.locationid}.`);
-        }
-      })
-      .catch((e: unknown) => {
-        alert(
-          "Could not create project: " +
-            (e instanceof Error ? e.message : String(e))
-        );
+  async function updateLocation(
+    location: Schema["Location"]["type"],
+    edits: LocationEdits
+  ) {
+    try {
+      const { errors } = await client.models.Location.update({
+        id: location.id,
+        ...edits,
       });
+      if (errors?.length) {
+        alert(
+          "Could not save location: " + errors.map((e) => e.message).join("; ")
+        );
+      }
+    } catch (e: unknown) {
+      alert(
+        "Could not save location: " +
+          (e instanceof Error ? e.message : String(e))
+      );
+    }
   }
 
   if (!apiKey) {
@@ -116,8 +113,8 @@ function App() {
         onMapClick={handleMapClick}
         locations={locations}
         onDeleteLocation={deleteLocation}
-        onCreateProject={createProject}
         onListProjects={setProjectsFor}
+        onUpdateLocation={updateLocation}
       />
       <ControlPanel
         onCreateLocation={() => setPicking((v) => !v)}

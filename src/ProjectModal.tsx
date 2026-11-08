@@ -62,6 +62,17 @@ function ProjectModal({
     });
   }
 
+  function startAdd() {
+    setEditingId("new");
+    setDraft({
+      project: "",
+      phase: "New",
+      startdate: "",
+      enddate: "",
+      task: "",
+    });
+  }
+
   async function save() {
     if (!editingId) return;
     if (!draft.phase.trim()) {
@@ -70,15 +81,21 @@ function ProjectModal({
     }
     setBusy(true);
     try {
-      const { errors } = await client.models.Project.update({
-        id: editingId,
+      // AWSDate wants YYYY-MM-DD or null — never an empty string.
+      const fields = {
         project: draft.project,
         phase: draft.phase,
-        // AWSDate wants YYYY-MM-DD or null — never an empty string.
         startdate: draft.startdate || null,
         enddate: draft.enddate || null,
         task: draft.task,
-      });
+      };
+      const { errors } =
+        editingId === "new"
+          ? await client.models.Project.create({
+              locationid: location.locationid ?? 0,
+              ...fields,
+            })
+          : await client.models.Project.update({ id: editingId, ...fields });
       if (errors?.length) {
         alert("Could not save: " + errors.map((e) => e.message).join("; "));
         return;
@@ -138,9 +155,49 @@ function ProjectModal({
             marginBottom: "0.75rem",
           }}
         >
-          <h2 style={{ margin: 0, fontSize: "1.15rem" }}>
-            Projects · Location {location.locationid}
-          </h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <h2 style={{ margin: 0, fontSize: "1.15rem" }}>
+              Projects · Location {location.locationid}
+            </h2>
+            <button
+              type="button"
+              onClick={startAdd}
+              title="Add project"
+              aria-label="Add project"
+              disabled={editingId !== null}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                height: 30,
+                padding: "0 12px",
+                borderRadius: 999,
+                border: "none",
+                background: "#e8f0fe",
+                color: "#1a73e8",
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                cursor: editingId !== null ? "default" : "pointer",
+                opacity: editingId !== null ? 0.5 : 1,
+              }}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 8v8M8 12h8" />
+              </svg>
+              Add project
+            </button>
+          </div>
           <button
             type="button"
             onClick={onClose}
@@ -164,11 +221,13 @@ function ProjectModal({
         {status === "error" && (
           <p style={{ color: "#b00020" }}>Failed to load projects: {error}</p>
         )}
-        {status === "loaded" && projects.length === 0 && (
-          <p>No projects at this location yet.</p>
-        )}
+        {status === "loaded" &&
+          projects.length === 0 &&
+          editingId !== "new" && (
+            <p>No projects at this location yet. Click “Add project”.</p>
+          )}
 
-        {status === "loaded" && projects.length > 0 && (
+        {status === "loaded" && (projects.length > 0 || editingId === "new") && (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
@@ -181,6 +240,71 @@ function ProjectModal({
               </tr>
             </thead>
             <tbody>
+              {editingId === "new" && (
+                <tr key="new">
+                  <td style={cell}>
+                    <input
+                      style={editInput}
+                      value={draft.project}
+                      placeholder="Project name"
+                      autoFocus
+                      onChange={(e) =>
+                        setDraft({ ...draft, project: e.target.value })
+                      }
+                    />
+                  </td>
+                  <td style={cell}>
+                    <input
+                      style={editInput}
+                      value={draft.phase}
+                      onChange={(e) =>
+                        setDraft({ ...draft, phase: e.target.value })
+                      }
+                    />
+                  </td>
+                  <td style={cell}>
+                    <input
+                      type="date"
+                      style={editInput}
+                      value={draft.startdate}
+                      onChange={(e) =>
+                        setDraft({ ...draft, startdate: e.target.value })
+                      }
+                    />
+                  </td>
+                  <td style={cell}>
+                    <input
+                      type="date"
+                      style={editInput}
+                      value={draft.enddate}
+                      onChange={(e) =>
+                        setDraft({ ...draft, enddate: e.target.value })
+                      }
+                    />
+                  </td>
+                  <td style={cell}>
+                    <input
+                      style={editInput}
+                      value={draft.task}
+                      onChange={(e) =>
+                        setDraft({ ...draft, task: e.target.value })
+                      }
+                    />
+                  </td>
+                  <td style={{ ...cell, whiteSpace: "nowrap" }}>
+                    <button style={actionBtn} onClick={save} disabled={busy}>
+                      Save
+                    </button>
+                    <button
+                      style={actionBtn}
+                      onClick={() => setEditingId(null)}
+                      disabled={busy}
+                    >
+                      Cancel
+                    </button>
+                  </td>
+                </tr>
+              )}
               {projects.map((p) =>
                 editingId === p.id ? (
                   <tr key={p.id}>
