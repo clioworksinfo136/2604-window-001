@@ -42,6 +42,15 @@ Phase: a
       phase: a.string(),
     })
     .authorization((allow) => [allow.publicApiKey()]),
+Photo: a
+    .model({
+      // Project.id this photo belongs to
+      projectId: a.string().required(),
+      // S3 path under the "photos/" prefix
+      path: a.string().required(),
+      note: a.string(),
+    })
+    .authorization((allow) => [allow.publicApiKey()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;

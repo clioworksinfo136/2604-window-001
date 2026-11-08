@@ -5,6 +5,7 @@ import { client } from "./client";
 import MapView from "./MapView";
 import ControlPanel from "./ControlPanel";
 import TaskModal from "./TaskModal";
+import ProjectModal from "./ProjectModal";
 
 const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
@@ -17,6 +18,9 @@ function App() {
     null
   );
   const [picking, setPicking] = useState(false);
+  const [projectsFor, setProjectsFor] = useState<
+    Schema["Location"]["type"] | null
+  >(null);
 
   useEffect(() => {
     const sub = client.models.Location.observeQuery().subscribe({
@@ -113,6 +117,7 @@ function App() {
         locations={locations}
         onDeleteLocation={deleteLocation}
         onCreateProject={createProject}
+        onListProjects={setProjectsFor}
       />
       <ControlPanel
         onCreateLocation={() => setPicking((v) => !v)}
@@ -123,6 +128,12 @@ function App() {
         locations={locations}
       />
       {tasksOpen && <TaskModal onClose={() => setTasksOpen(false)} />}
+      {projectsFor && (
+        <ProjectModal
+          location={projectsFor}
+          onClose={() => setProjectsFor(null)}
+        />
+      )}
     </APIProvider>
   );
 }

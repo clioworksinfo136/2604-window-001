@@ -16,6 +16,7 @@ function MapView({
   locations = [],
   onDeleteLocation,
   onCreateProject,
+  onListProjects,
 }: {
   searched: google.maps.LatLngLiteral | null;
   picking?: boolean;
@@ -23,6 +24,7 @@ function MapView({
   locations?: Location[];
   onDeleteLocation?: (location: Location) => void;
   onCreateProject?: (location: Location) => void;
+  onListProjects?: (location: Location) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -69,7 +71,14 @@ function MapView({
               onCloseClick={() => setSelectedId(null)}
             >
               <LocationDetails location={selected} />
-              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  marginTop: 10,
+                }}
+              >
                 <button
                   type="button"
                   onClick={() => onCreateProject?.(selected)}
@@ -85,6 +94,22 @@ function MapView({
                   }}
                 >
                   + Project
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onListProjects?.(selected)}
+                  style={{
+                    background: "#fff",
+                    color: "#1a73e8",
+                    border: "1px solid #bcd3f7",
+                    borderRadius: 6,
+                    padding: "4px 10px",
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  List Project
                 </button>
                 <button
                   type="button"
