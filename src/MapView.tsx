@@ -49,12 +49,18 @@ function MapView({
   ) => Promise<void> | void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
 
   // Resolve against the live list so the popup reflects the latest data.
   const selected = locations.find((l) => l.id === selectedId) ?? null;
+  // Hover preview, suppressed while that same point's popup is already open.
+  const hovered =
+    hoveredId && hoveredId !== selectedId
+      ? (locations.find((l) => l.id === hoveredId) ?? null)
+      : null;
 
   function startEdit(l: Location) {
     setDraft({
@@ -110,7 +116,8 @@ function MapView({
             <Marker
               key={location.id}
               position={{ lat: location.latitude, lng: location.longitude }}
-              title={location.address ?? undefined}
+              onMouseOver={() => setHoveredId(location.id)}
+              onMouseOut={() => setHoveredId(null)}
               onClick={() => {
                 setSelectedId(location.id);
                 setEditing(false);
@@ -126,6 +133,18 @@ function MapView({
             />
           ) : null
         )}
+
+        {hovered &&
+          hovered.latitude != null &&
+          hovered.longitude != null && (
+            <InfoWindow
+              position={{ lat: hovered.latitude, lng: hovered.longitude }}
+              disableAutoPan
+              headerDisabled
+            >
+              <HoverCard location={hovered} />
+            </InfoWindow>
+          )}
 
         {selected &&
           selected.latitude != null &&
@@ -261,6 +280,29 @@ function LocationDetails({
             ))}
           </tbody>
         </table>
+      )}
+    </div>
+  );
+}
+
+/** Compact address + contact summary shown while hovering a point. */
+function HoverCard({ location }: { location: Location }) {
+  const contactLines = [location.contact, location.phone, location.email].filter(
+    (v): v is string => Boolean(v)
+  );
+
+  return (
+    <div style={{ minWidth: 150, color: "#222", fontSize: "0.82rem" }}>
+      <div style={{ fontWeight: 700, marginBottom: 2 }}>
+        Location {location.locationid}
+      </div>
+      <div>{location.address || <em style={{ color: "#888" }}>No address</em>}</div>
+      {contactLines.length > 0 && (
+        <div style={{ marginTop: 4, color: "#555" }}>
+          {contactLines.map((line) => (
+            <div key={line}>{line}</div>
+          ))}
+        </div>
       )}
     </div>
   );
