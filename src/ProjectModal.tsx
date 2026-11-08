@@ -5,6 +5,7 @@ import PhotoModal from "./PhotoModal";
 
 type Location = Schema["Location"]["type"];
 type Project = Schema["Project"]["type"];
+type Task = Schema["Task"]["type"];
 
 function errMsg(e: unknown) {
   return e instanceof Error ? e.message : String(e);
@@ -19,6 +20,7 @@ function ProjectModal({
   onClose: () => void;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">(
     "loading"
   );
@@ -50,6 +52,38 @@ function ProjectModal({
     });
     return () => sub.unsubscribe();
   }, [location.locationid]);
+
+  // Tasks come from the Task table and populate the Task dropdown.
+  useEffect(() => {
+    const sub = client.models.Task.observeQuery().subscribe({
+      next: ({ items }) => setTasks([...items]),
+      error: () => setTasks([]),
+    });
+    return () => sub.unsubscribe();
+  }, []);
+
+  // Known task names, plus whatever the row already holds so an existing
+  // value is never silently dropped.
+  const taskOptions = Array.from(
+    new Set(
+      [...tasks.map((t) => t.task ?? ""), draft.task].filter((t) => t !== "")
+    )
+  ).sort((a, b) => a.localeCompare(b));
+
+  const taskSelect = (
+    <select
+      style={editInput}
+      value={draft.task}
+      onChange={(e) => setDraft({ ...draft, task: e.target.value })}
+    >
+      <option value="">— none —</option>
+      {taskOptions.map((t) => (
+        <option key={t} value={t}>
+          {t}
+        </option>
+      ))}
+    </select>
+  );
 
   function startEdit(p: Project) {
     setEditingId(p.id);
@@ -235,7 +269,7 @@ function ProjectModal({
                 <th style={cellHead}>Phase</th>
                 <th style={cellHead}>Start</th>
                 <th style={cellHead}>End</th>
-                <th style={cellHead}>Task</th>
+                <th style={{ ...cellHead, minWidth: 130 }}>Task</th>
                 <th style={{ ...cellHead, width: 220 }}>Actions</th>
               </tr>
             </thead>
@@ -283,13 +317,7 @@ function ProjectModal({
                     />
                   </td>
                   <td style={cell}>
-                    <input
-                      style={editInput}
-                      value={draft.task}
-                      onChange={(e) =>
-                        setDraft({ ...draft, task: e.target.value })
-                      }
-                    />
+                    {taskSelect}
                   </td>
                   <td style={{ ...cell, whiteSpace: "nowrap" }}>
                     <button style={actionBtn} onClick={save} disabled={busy}>
@@ -347,13 +375,7 @@ function ProjectModal({
                       />
                     </td>
                     <td style={cell}>
-                      <input
-                        style={editInput}
-                        value={draft.task}
-                        onChange={(e) =>
-                          setDraft({ ...draft, task: e.target.value })
-                        }
-                      />
+                      {taskSelect}
                     </td>
                     <td style={{ ...cell, whiteSpace: "nowrap" }}>
                       <button style={actionBtn} onClick={save} disabled={busy}>
