@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useMap, useMapsLibrary } from "@vis.gl/react-google-maps";
 import type { Schema } from "../amplify/data/resource";
+import { client } from "./client";
 
 type Location = Schema["Location"]["type"];
+type Phase = Schema["Phase"]["type"];
+type Project = Schema["Project"]["type"];
 
 /** Single top-left panel holding the Location, Task, and Search controls. */
 function ControlPanel({
@@ -24,6 +27,28 @@ function ControlPanel({
   const placesLib = useMapsLibrary("places");
   const inputRef = useRef<HTMLInputElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [phases, setPhases] = useState<Phase[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  // Phase list and all projects feed the summary table below the controls.
+  useEffect(() => {
+    const sub = client.models.Phase.observeQuery().subscribe({
+      next: ({ items }) =>
+        setPhases(
+          [...items].sort((a, b) => (a.phaseid ?? 0) - (b.phaseid ?? 0))
+        ),
+      error: () => setPhases([]),
+    });
+    return () => sub.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const sub = client.models.Project.observeQuery().subscribe({
+      next: ({ items }) => setProjects([...items]),
+      error: () => setProjects([]),
+    });
+    return () => sub.unsubscribe();
+  }, []);
 
   // Panel position; null means "use the default top-left CSS offsets".
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
@@ -87,6 +112,33 @@ function ControlPanel({
     onClear();
     inputRef.current?.focus();
   }
+
+  // Points (locations) that currently exist on the map.
+  const pointIds = new Set(
+    locations.map((l) => l.locationid).filter((v): v is number => v != null)
+  );
+
+  /** How many points have at least one project in this phase. */
+  function pointsInPhase(phaseName: string) {
+    const ids = new Set<number>();
+    for (const p of projects) {
+      if (
+        p.phase === phaseName &&
+        p.locationid != null &&
+        pointIds.has(p.locationid)
+      ) {
+        ids.add(p.locationid);
+      }
+    }
+    return ids.size;
+  }
+
+  const pointsWithProjects = new Set(
+    projects.map((p) => p.locationid).filter((v): v is number => v != null)
+  );
+  const unassignedCount = [...pointIds].filter(
+    (id) => !pointsWithProjects.has(id)
+  ).length;
 
   return (
     <div
@@ -182,39 +234,73 @@ function ControlPanel({
       </div>
 
       {locations.length > 0 && (
-        <ul
+        <table
           style={{
-            listStyle: "none",
-            padding: 0,
-            margin: "8px 0 0",
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
-            border: "none",
-            background: "transparent",
+            width: "100%",
+            borderCollapse: "collapse",
+            marginTop: 10,
+            fontSize: "0.82rem",
           }}
         >
-          {locations.map((location) => (
-            <li
-              key={location.id}
-              style={{
-                background: "#f4f4f6",
-                borderRadius: 6,
-                padding: "6px 8px",
-                fontSize: "0.9rem",
-              }}
-            >
-              {location.address ??
-                (location.latitude != null && location.longitude != null
-                  ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`
-                  : "(no address)")}
-            </li>
-          ))}
-        </ul>
+          <thead>
+            <tr>
+              <th style={sumHead}>Phase</th>
+              <th style={{ ...sumHead, textAlign: "right", width: 54 }}>
+                Points
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {phases.map((ph) => (
+              <tr key={ph.id}>
+                <td style={sumCell}>{ph.phase}</td>
+                <td style={{ ...sumCell, textAlign: "right" }}>
+                  {pointsInPhase(ph.phase ?? "")}
+                </td>
+              </tr>
+            ))}
+            {unassignedCount > 0 && (
+              <tr>
+                <td style={{ ...sumCell, color: "#888" }}>No project</td>
+                <td style={{ ...sumCell, textAlign: "right", color: "#888" }}>
+                  {unassignedCount}
+                </td>
+              </tr>
+            )}
+            <tr>
+              <td style={{ ...sumCell, fontWeight: 700, borderBottom: "none" }}>
+                Total
+              </td>
+              <td
+                style={{
+                  ...sumCell,
+                  textAlign: "right",
+                  fontWeight: 700,
+                  borderBottom: "none",
+                }}
+              >
+                {locations.length}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       )}
     </div>
   );
 }
+
+const sumHead: React.CSSProperties = {
+  textAlign: "left",
+  borderBottom: "1px solid #ddd",
+  padding: "4px 6px",
+  fontWeight: 600,
+  color: "#555",
+};
+
+const sumCell: React.CSSProperties = {
+  borderBottom: "1px solid #f0f0f0",
+  padding: "4px 6px",
+};
 
 /** Small square button that shows an icon image instead of text. */
 function IconButton({
