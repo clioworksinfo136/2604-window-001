@@ -7,12 +7,14 @@ type Location = Schema["Location"]["type"];
 /** Single top-left panel holding the Location, Task, and Search controls. */
 function ControlPanel({
   onCreateLocation,
+  picking = false,
   onOpenTasks,
   onPlace,
   onClear,
   locations,
 }: {
   onCreateLocation: () => void;
+  picking?: boolean;
   onOpenTasks: () => void;
   onPlace: (loc: google.maps.LatLngLiteral) => void;
   onClear: () => void;
@@ -22,6 +24,32 @@ function ControlPanel({
   const placesLib = useMapsLibrary("places");
   const inputRef = useRef<HTMLInputElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+
+  // Panel position; null means "use the default top-left CSS offsets".
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+
+  function handleDragStart(e: React.PointerEvent<HTMLDivElement>) {
+    // Don't start a drag from an interactive element inside the handle.
+    if ((e.target as HTMLElement).closest("button, input")) return;
+    const panel = e.currentTarget.parentElement as HTMLElement;
+    const rect = panel.getBoundingClientRect();
+    dragRef.current = { dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+
+  function handleDragMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current) return;
+    setPos({
+      x: e.clientX - dragRef.current.dx,
+      y: e.clientY - dragRef.current.dy,
+    });
+  }
+
+  function handleDragEnd(e: React.PointerEvent<HTMLDivElement>) {
+    dragRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  }
 
   // Keep the latest map/callback available to the single place_changed listener.
   const mapRef = useRef(map);
@@ -64,8 +92,9 @@ function ControlPanel({
     <div
       style={{
         position: "fixed",
-        top: 16,
-        left: 16,
+        ...(pos
+          ? { left: pos.x, top: pos.y }
+          : { top: 60, left: 16 }),
         zIndex: 2,
         maxWidth: 320,
         padding: 8,
@@ -75,8 +104,38 @@ function ControlPanel({
         textAlign: "left",
       }}
     >
+      {/* Drag handle */}
+      <div
+        onPointerDown={handleDragStart}
+        onPointerMove={handleDragMove}
+        onPointerUp={handleDragEnd}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: 16,
+          marginBottom: 6,
+          cursor: "grab",
+          touchAction: "none",
+        }}
+        title="Drag to move"
+      >
+        <div
+          style={{
+            width: 32,
+            height: 4,
+            borderRadius: 2,
+            background: "#c4c4c8",
+          }}
+        />
+      </div>
+
       <div style={{ display: "flex", gap: 8 }}>
-        <IconButton title="Add location" onClick={onCreateLocation}>
+        <IconButton
+          title={picking ? "Click the map to place location" : "Add location"}
+          onClick={onCreateLocation}
+          active={picking}
+        >
           <LocationIcon />
         </IconButton>
         <IconButton title="Tasks" onClick={onOpenTasks}>
@@ -145,7 +204,10 @@ function ControlPanel({
                 fontSize: "0.9rem",
               }}
             >
-              {location.address ?? "(no address)"}
+              {location.address ??
+                (location.latitude != null && location.longitude != null
+                  ? `${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`
+                  : "(no address)")}
             </li>
           ))}
         </ul>
@@ -158,10 +220,12 @@ function ControlPanel({
 function IconButton({
   title,
   onClick,
+  active = false,
   children,
 }: {
   title: string;
   onClick: () => void;
+  active?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -177,9 +241,9 @@ function IconButton({
         alignItems: "center",
         justifyContent: "center",
         padding: 0,
-        background: "#fff",
-        color: "#333",
-        border: "1px solid #e0e0e0",
+        background: active ? "#1a73e8" : "#fff",
+        color: active ? "#fff" : "#333",
+        border: active ? "1px solid #1a73e8" : "1px solid #e0e0e0",
         borderRadius: 8,
         cursor: "pointer",
       }}
