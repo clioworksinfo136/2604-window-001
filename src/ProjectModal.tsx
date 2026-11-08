@@ -180,6 +180,31 @@ function ProjectModal({
     }
   }
 
+  /** Options for a row's phase dropdown, keeping its current value listed. */
+  function rowPhaseOptions(current: string) {
+    return current && !phaseNames.includes(current)
+      ? [...phaseNames, current]
+      : phaseNames;
+  }
+
+  /** Change a project's phase straight from the row, without entering edit mode. */
+  async function changePhase(p: Project, phase: string) {
+    if (!phase) return; // phase is required — ignore the placeholder
+    try {
+      const { errors } = await client.models.Project.update({
+        id: p.id,
+        phase,
+      });
+      if (errors?.length) {
+        alert(
+          "Could not update phase: " + errors.map((e) => e.message).join("; ")
+        );
+      }
+    } catch (e) {
+      alert("Could not update phase: " + errMsg(e));
+    }
+  }
+
   async function removeProject(p: Project) {
     if (!window.confirm(`Delete project "${p.project ?? ""}"?`)) return;
     try {
@@ -419,7 +444,21 @@ function ProjectModal({
                 ) : (
                   <tr key={p.id}>
                     <td style={cell}>{p.project ?? ""}</td>
-                    <td style={cell}>{p.phase ?? ""}</td>
+                    <td style={cell}>
+                      <select
+                        style={editInput}
+                        value={p.phase ?? ""}
+                        disabled={editingId !== null}
+                        onChange={(e) => changePhase(p, e.target.value)}
+                      >
+                        {!p.phase && <option value="">— select —</option>}
+                        {rowPhaseOptions(p.phase ?? "").map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
                     <td style={cell}>{p.startdate ?? ""}</td>
                     <td style={cell}>{p.enddate ?? ""}</td>
                     <td style={cell}>{p.task ?? ""}</td>
