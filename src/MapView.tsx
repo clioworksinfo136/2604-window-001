@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { InfoWindow, Map, Marker } from "@vis.gl/react-google-maps";
 import type { Schema } from "../amplify/data/resource";
+import { client } from "./client";
 
 type Location = Schema["Location"]["type"];
+type Project = Schema["Project"]["type"];
 
 /** Editable fields on a location (coordinates come from the map pin). */
 export type LocationEdits = {
@@ -50,6 +52,16 @@ function MapView({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  // All projects, so the popup can list the ones at the selected point.
+  useEffect(() => {
+    const sub = client.models.Project.observeQuery().subscribe({
+      next: ({ items }) => setProjects([...items]),
+      error: () => setProjects([]),
+    });
+    return () => sub.unsubscribe();
+  }, []);
   // Closing the hover card is delayed slightly: the card is drawn right
   // above the dot, so a brief mouseout as it opens must not close it.
   const hoverTimer = useRef<number | null>(null);
@@ -197,6 +209,12 @@ function MapView({
                 location={selected}
                 onEdit={() => startEdit(selected)}
               />
+              <ProjectList
+                projects={projects.filter(
+                  (p) => p.locationid === selected.locationid
+                )}
+                onOpen={() => onListProjects?.(selected)}
+              />
               <div
                 style={{
                   display: "flex",
@@ -205,22 +223,6 @@ function MapView({
                   marginTop: 10,
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() => onListProjects?.(selected)}
-                  style={{
-                    background: "#e8f0fe",
-                    color: "#1a73e8",
-                    border: "none",
-                    borderRadius: 6,
-                    padding: "4px 10px",
-                    fontSize: "0.8rem",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                  }}
-                >
-                  List Project
-                </button>
                 <button
                   type="button"
                   onClick={() => onDeleteLocation?.(selected)}
@@ -288,6 +290,55 @@ function LocationDetails({
       {!location.address && !location.contact && (
         <div style={{ marginTop: 2, color: "#777" }}>No details yet.</div>
       )}
+    </div>
+  );
+}
+
+/** Projects at this point, listed under the heading. Clicking one opens
+ * the full projects view for the location. */
+function ProjectList({
+  projects,
+  onOpen,
+}: {
+  projects: Project[];
+  onOpen: () => void;
+}) {
+  if (projects.length === 0) {
+    return (
+      <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#888" }}>
+        No projects yet.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 6, display: "flex", flexDirection: "column" }}>
+      {projects.map((p) => (
+        <button
+          key={p.id}
+          type="button"
+          onClick={onOpen}
+          title="Open projects"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 10,
+            width: "100%",
+            textAlign: "left",
+            background: "transparent",
+            border: "none",
+            borderTop: "1px solid #eee",
+            padding: "4px 0",
+            font: "inherit",
+            fontSize: "0.8rem",
+            color: "#222",
+            cursor: "pointer",
+          }}
+        >
+          <span>{p.project || "(untitled)"}</span>
+          <span style={{ color: "#888", whiteSpace: "nowrap" }}>{p.phase}</span>
+        </button>
+      ))}
     </div>
   );
 }
