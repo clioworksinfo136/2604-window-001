@@ -256,10 +256,9 @@ function LocationDetails({
   location: Location;
   onEdit?: () => void;
 }) {
-  const rows: Array<[string, string]> = [];
-  // The popup shows address and contact only; the rest stay in the editor.
-  if (location.address) rows.push(["Address", location.address]);
-  if (location.contact) rows.push(["Contact", location.contact]);
+  // The popup is headed by the address, with the contact beneath it.
+  // Falls back to the location number only when there is no address.
+  const heading = location.address || `Location ${location.locationid}`;
 
   return (
     <div style={{ minWidth: 180, color: "#222", fontSize: "0.85rem" }}>
@@ -269,10 +268,10 @@ function LocationDetails({
         title="Click to edit this location"
         style={{
           display: "block",
+          textAlign: "left",
           background: "transparent",
           border: "none",
           padding: 0,
-          marginBottom: 4,
           font: "inherit",
           fontWeight: 700,
           color: "#1a73e8",
@@ -281,30 +280,13 @@ function LocationDetails({
           cursor: "pointer",
         }}
       >
-        Location {location.locationid}
+        {heading}
       </button>
-      {rows.length === 0 ? (
-        <div style={{ color: "#777" }}>No details yet.</div>
-      ) : (
-        <table>
-          <tbody>
-            {rows.map(([label, value]) => (
-              <tr key={label}>
-                <td
-                  style={{
-                    color: "#777",
-                    paddingRight: 8,
-                    verticalAlign: "top",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {label}
-                </td>
-                <td>{value}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {location.contact && (
+        <div style={{ marginTop: 2, color: "#555" }}>{location.contact}</div>
+      )}
+      {!location.address && !location.contact && (
+        <div style={{ marginTop: 2, color: "#777" }}>No details yet.</div>
       )}
     </div>
   );
