@@ -28,12 +28,18 @@ Project: a
       task: a.string(),
       description: a.string(),
       phase: a.string().required(),
+      // A project owns many tasks.
+      tasks: a.hasMany("Task", "projectId"),
     })
     .authorization((allow) => [allow.publicApiKey()]),
 Task: a
     .model({
       taskid: a.integer().required(),
       task: a.string(),
+      // Each task belongs to exactly one project. Optional so tasks that
+      // predate this relationship stay readable until they are assigned.
+      projectId: a.id(),
+      project: a.belongsTo("Project", "projectId"),
     })
     .authorization((allow) => [allow.publicApiKey()]),
 Phase: a
