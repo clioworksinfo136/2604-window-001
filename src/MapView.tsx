@@ -37,6 +37,7 @@ function MapView({
   locations = [],
   onDeleteLocation,
   onListProjects,
+  onAddProject,
   onUpdateLocation,
 }: {
   searched: google.maps.LatLngLiteral | null;
@@ -45,6 +46,7 @@ function MapView({
   locations?: Location[];
   onDeleteLocation?: (location: Location) => void;
   onListProjects?: (location: Location) => void;
+  onAddProject?: (location: Location) => void;
   onUpdateLocation?: (
     location: Location,
     edits: LocationEdits
@@ -223,6 +225,22 @@ function MapView({
                   marginTop: 10,
                 }}
               >
+                <button
+                  type="button"
+                  onClick={() => onAddProject?.(selected)}
+                  style={{
+                    background: "#e8f0fe",
+                    color: "#1a73e8",
+                    border: "none",
+                    borderRadius: 6,
+                    padding: "4px 10px",
+                    fontSize: "0.8rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Add
+                </button>
                 <button
                   type="button"
                   onClick={() => onDeleteLocation?.(selected)}

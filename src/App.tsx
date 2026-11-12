@@ -19,6 +19,7 @@ function App() {
     null
   );
   const [picking, setPicking] = useState(false);
+  const [projectsAdd, setProjectsAdd] = useState(false);
   const [projectsFor, setProjectsFor] = useState<
     Schema["Location"]["type"] | null
   >(null);
@@ -113,7 +114,14 @@ function App() {
         onMapClick={handleMapClick}
         locations={locations}
         onDeleteLocation={deleteLocation}
-        onListProjects={setProjectsFor}
+        onListProjects={(l) => {
+          setProjectsAdd(false);
+          setProjectsFor(l);
+        }}
+        onAddProject={(l) => {
+          setProjectsAdd(true);
+          setProjectsFor(l);
+        }}
         onUpdateLocation={updateLocation}
       />
       <ControlPanel
@@ -128,6 +136,7 @@ function App() {
       {projectsFor && (
         <ProjectModal
           location={projectsFor}
+          autoAdd={projectsAdd}
           onClose={() => setProjectsFor(null)}
         />
       )}

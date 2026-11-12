@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
 import PhotoModal from "./PhotoModal";
@@ -16,9 +16,12 @@ function errMsg(e: unknown) {
 function ProjectModal({
   location,
   onClose,
+  autoAdd = false,
 }: {
   location: Location;
   onClose: () => void;
+  /** Open straight into a blank new-project row. */
+  autoAdd?: boolean;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -121,6 +124,15 @@ function ProjectModal({
       ))}
     </select>
   );
+
+  const autoAddDone = useRef(false);
+  useEffect(() => {
+    if (!autoAdd || autoAddDone.current || phases.length === 0) return;
+    autoAddDone.current = true;
+    startAdd();
+    // startAdd only reads phases, which this effect already waits for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAdd, phases]);
 
   function startEdit(p: Project) {
     setEditingId(p.id);
