@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
 import PhotoModal from "./PhotoModal";
+import TaskModal from "./TaskModal";
 
 type Location = Schema["Location"]["type"];
 type Project = Schema["Project"]["type"];
-type Task = Schema["Task"]["type"];
 type Phase = Schema["Phase"]["type"];
 
 function errMsg(e: unknown) {
@@ -24,7 +24,6 @@ function ProjectModal({
   autoAdd?: boolean;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">(
     "loading"
@@ -37,10 +36,10 @@ function ProjectModal({
     phase: "",
     startdate: "",
     enddate: "",
-    task: "",
   });
   const [busy, setBusy] = useState(false);
   const [photosFor, setPhotosFor] = useState<Project | null>(null);
+  const [tasksFor, setTasksFor] = useState<Project | null>(null);
 
   useEffect(() => {
     const sub = client.models.Project.observeQuery({
@@ -58,15 +57,6 @@ function ProjectModal({
     return () => sub.unsubscribe();
   }, [location.locationid]);
 
-  // Tasks come from the Task table and populate the Task dropdown.
-  useEffect(() => {
-    const sub = client.models.Task.observeQuery().subscribe({
-      next: ({ items }) => setTasks([...items]),
-      error: () => setTasks([]),
-    });
-    return () => sub.unsubscribe();
-  }, []);
-
   // Phases come from the Phase table and populate the Phase dropdown.
   useEffect(() => {
     const sub = client.models.Phase.observeQuery().subscribe({
@@ -79,13 +69,14 @@ function ProjectModal({
     return () => sub.unsubscribe();
   }, []);
 
-  // Known task names, plus whatever the row already holds so an existing
-  // value is never silently dropped.
-  const taskOptions = Array.from(
-    new Set(
-      [...tasks.map((t) => t.task ?? ""), draft.task].filter((t) => t !== "")
-    )
-  ).sort((a, b) => a.localeCompare(b));
+  const autoAddDone = useRef(false);
+  useEffect(() => {
+    if (!autoAdd || autoAddDone.current || phases.length === 0) return;
+    autoAddDone.current = true;
+    startAdd();
+    // startAdd only reads phases, which this effect already waits for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAdd, phases]);
 
   // Phase order follows phaseid; keep any existing value as an option.
   const phaseNames = phases.map((p) => p.phase ?? "").filter((p) => p !== "");
@@ -110,30 +101,6 @@ function ProjectModal({
     </select>
   );
 
-  const taskSelect = (
-    <select
-      style={editInput}
-      value={draft.task}
-      onChange={(e) => setDraft({ ...draft, task: e.target.value })}
-    >
-      <option value="">— none —</option>
-      {taskOptions.map((t) => (
-        <option key={t} value={t}>
-          {t}
-        </option>
-      ))}
-    </select>
-  );
-
-  const autoAddDone = useRef(false);
-  useEffect(() => {
-    if (!autoAdd || autoAddDone.current || phases.length === 0) return;
-    autoAddDone.current = true;
-    startAdd();
-    // startAdd only reads phases, which this effect already waits for.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoAdd, phases]);
-
   function startEdit(p: Project) {
     setEditingId(p.id);
     setDraft({
@@ -141,7 +108,6 @@ function ProjectModal({
       phase: p.phase ?? "",
       startdate: p.startdate ?? "",
       enddate: p.enddate ?? "",
-      task: p.task ?? "",
     });
   }
 
@@ -153,7 +119,6 @@ function ProjectModal({
       phase: phases[0]?.phase ?? "",
       startdate: "",
       enddate: "",
-      task: "",
     });
   }
 
@@ -171,7 +136,6 @@ function ProjectModal({
         phase: draft.phase,
         startdate: draft.startdate || null,
         enddate: draft.enddate || null,
-        task: draft.task,
       };
       const { errors } =
         editingId === "new"
@@ -344,7 +308,6 @@ function ProjectModal({
                 <th style={{ ...cellHead, minWidth: 150 }}>Phase</th>
                 <th style={cellHead}>Start</th>
                 <th style={cellHead}>End</th>
-                <th style={{ ...cellHead, minWidth: 130 }}>Task</th>
                 <th style={{ ...cellHead, width: 220 }}>Actions</th>
               </tr>
             </thead>
@@ -384,9 +347,6 @@ function ProjectModal({
                         setDraft({ ...draft, enddate: e.target.value })
                       }
                     />
-                  </td>
-                  <td style={cell}>
-                    {taskSelect}
                   </td>
                   <td style={{ ...cell, whiteSpace: "nowrap" }}>
                     <button style={actionBtn} onClick={save} disabled={busy}>
@@ -437,9 +397,6 @@ function ProjectModal({
                         }
                       />
                     </td>
-                    <td style={cell}>
-                      {taskSelect}
-                    </td>
                     <td style={{ ...cell, whiteSpace: "nowrap" }}>
                       <button style={actionBtn} onClick={save} disabled={busy}>
                         Save
@@ -473,7 +430,6 @@ function ProjectModal({
                     </td>
                     <td style={cell}>{p.startdate ?? ""}</td>
                     <td style={cell}>{p.enddate ?? ""}</td>
-                    <td style={cell}>{p.task ?? ""}</td>
                     <td style={{ ...cell, whiteSpace: "nowrap" }}>
                       <button
                         style={actionBtn}
@@ -481,6 +437,13 @@ function ProjectModal({
                         disabled={editingId !== null}
                       >
                         Modify
+                      </button>
+                      <button
+                        style={actionBtn}
+                        onClick={() => setTasksFor(p)}
+                        disabled={editingId !== null}
+                      >
+                        Tasks
                       </button>
                       <button
                         style={actionBtn}
@@ -507,6 +470,9 @@ function ProjectModal({
 
       {photosFor && (
         <PhotoModal project={photosFor} onClose={() => setPhotosFor(null)} />
+      )}
+      {tasksFor && (
+        <TaskModal project={tasksFor} onClose={() => setTasksFor(null)} />
       )}
     </div>
   );

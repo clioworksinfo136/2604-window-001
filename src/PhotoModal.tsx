@@ -166,7 +166,6 @@ function PhotoModal({
         >
           <h2 style={{ margin: 0, fontSize: "1.1rem" }}>
             Photos · {project.project ?? "Project"}
-            {project.task ? ` · ${project.task}` : ""}
           </h2>
           <button
             type="button"

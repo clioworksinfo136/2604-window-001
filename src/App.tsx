@@ -5,7 +5,6 @@ import { client } from "./client";
 import MapView from "./MapView";
 import type { LocationEdits } from "./MapView";
 import ControlPanel from "./ControlPanel";
-import TaskModal from "./TaskModal";
 import ProjectModal from "./ProjectModal";
 
 const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
@@ -14,7 +13,6 @@ function App() {
   const [locations, setLocations] = useState<
     Array<Schema["Location"]["type"]>
   >([]);
-  const [tasksOpen, setTasksOpen] = useState(false);
   const [searched, setSearched] = useState<google.maps.LatLngLiteral | null>(
     null
   );
@@ -127,12 +125,10 @@ function App() {
       <ControlPanel
         onCreateLocation={() => setPicking((v) => !v)}
         picking={picking}
-        onOpenTasks={() => setTasksOpen(true)}
         onPlace={setSearched}
         onClear={() => setSearched(null)}
         locations={locations}
       />
-      {tasksOpen && <TaskModal onClose={() => setTasksOpen(false)} />}
       {projectsFor && (
         <ProjectModal
           location={projectsFor}

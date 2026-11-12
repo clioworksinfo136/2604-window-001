@@ -25,7 +25,6 @@ Project: a
       project: a.string(),
       startdate: a.date(),
       enddate: a.date(),
-      task: a.string(),
       description: a.string(),
       phase: a.string().required(),
       // A project owns many tasks.

@@ -11,14 +11,12 @@ type Project = Schema["Project"]["type"];
 function ControlPanel({
   onCreateLocation,
   picking = false,
-  onOpenTasks,
   onPlace,
   onClear,
   locations,
 }: {
   onCreateLocation: () => void;
   picking?: boolean;
-  onOpenTasks: () => void;
   onPlace: (loc: google.maps.LatLngLiteral) => void;
   onClear: () => void;
   locations: Location[];
@@ -191,9 +189,6 @@ function ControlPanel({
         >
           <LocationIcon />
         </IconButton>
-        <IconButton title="Tasks" onClick={onOpenTasks}>
-          <TaskIcon />
-        </IconButton>
         <IconButton
           title="Search"
           onClick={() => {
@@ -363,15 +358,6 @@ function LocationIcon() {
     <svg {...ICON}>
       <path d="M12 21s-7-6.4-7-11a7 7 0 1 1 14 0c0 4.6-7 11-7 11z" />
       <circle cx="12" cy="10" r="2.5" />
-    </svg>
-  );
-}
-
-function TaskIcon() {
-  return (
-    <svg {...ICON}>
-      <path d="M9 5h9M9 12h9M9 19h9" />
-      <path d="M4 5l1.2 1.2L7 4M4 12l1.2 1.2L7 11M4 19l1.2 1.2L7 18" />
     </svg>
   );
 }

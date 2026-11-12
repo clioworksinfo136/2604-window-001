@@ -3,13 +3,20 @@ import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
 
 type Task = Schema["Task"]["type"];
+type Project = Schema["Project"]["type"];
 
 function errMsg(e: unknown) {
   return e instanceof Error ? e.message : String(e);
 }
 
 /** Modal popup listing every Task row with add / edit / delete. */
-function TaskModal({ onClose }: { onClose: () => void }) {
+function TaskModal({
+  project,
+  onClose,
+}: {
+  project: Project;
+  onClose: () => void;
+}) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">(
     "loading"
@@ -23,7 +30,9 @@ function TaskModal({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    const sub = client.models.Task.observeQuery().subscribe({
+    const sub = client.models.Task.observeQuery({
+      filter: { projectId: { eq: project.id } },
+    }).subscribe({
       next: ({ items }) => {
         setTasks([...items]);
         setStatus("loaded");
@@ -34,7 +43,7 @@ function TaskModal({ onClose }: { onClose: () => void }) {
       },
     });
     return () => sub.unsubscribe();
-  }, []);
+  }, [project.id]);
 
   function startAdd() {
     const nextId = tasks.length
@@ -64,7 +73,11 @@ function TaskModal({ onClose }: { onClose: () => void }) {
     setBusy(true);
     try {
       if (editingId === "new") {
-        await client.models.Task.create({ taskid: idNum, task: draftTask });
+        await client.models.Task.create({
+          taskid: idNum,
+          task: draftTask,
+          projectId: project.id,
+        });
       } else if (editingId) {
         await client.models.Task.update({
           id: editingId,
@@ -159,7 +172,9 @@ function TaskModal({ onClose }: { onClose: () => void }) {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <h2 style={{ margin: 0, fontSize: "1.15rem" }}>Tasks</h2>
+            <h2 style={{ margin: 0, fontSize: "1.15rem" }}>
+              Tasks · {project.project || "Project"}
+            </h2>
             <button
               type="button"
               onClick={startAdd}
