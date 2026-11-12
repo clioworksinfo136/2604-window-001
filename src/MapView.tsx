@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { InfoWindow, Map, Marker } from "@vis.gl/react-google-maps";
 import type { Schema } from "../amplify/data/resource";
 
@@ -50,6 +50,32 @@ function MapView({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // Closing the hover card is delayed slightly: the card is drawn right
+  // above the dot, so a brief mouseout as it opens must not close it.
+  const hoverTimer = useRef<number | null>(null);
+
+  function showHover(id: string) {
+    if (hoverTimer.current !== null) {
+      window.clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+    setHoveredId(id);
+  }
+
+  function hideHover() {
+    if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => {
+      setHoveredId(null);
+      hoverTimer.current = null;
+    }, 150);
+  }
+
+  useEffect(
+    () => () => {
+      if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current);
+    },
+    []
+  );
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [busy, setBusy] = useState(false);
@@ -116,8 +142,8 @@ function MapView({
             <Marker
               key={location.id}
               position={{ lat: location.latitude, lng: location.longitude }}
-              onMouseOver={() => setHoveredId(location.id)}
-              onMouseOut={() => setHoveredId(null)}
+              onMouseOver={() => showHover(location.id)}
+              onMouseOut={hideHover}
               onClick={() => {
                 setSelectedId(location.id);
                 setEditing(false);
@@ -139,6 +165,7 @@ function MapView({
           hovered.longitude != null && (
             <InfoWindow
               position={{ lat: hovered.latitude, lng: hovered.longitude }}
+              pixelOffset={[0, -18]}
               disableAutoPan
               headerDisabled
             >
@@ -290,7 +317,15 @@ function HoverCard({ location }: { location: Location }) {
   );
 
   return (
-    <div style={{ minWidth: 150, color: "#222", fontSize: "0.82rem" }}>
+    <div
+      style={{
+        minWidth: 150,
+        color: "#222",
+        fontSize: "0.82rem",
+        // Never let the card itself take the pointer away from the marker.
+        pointerEvents: "none",
+      }}
+    >
       <div style={{ fontWeight: 700, marginBottom: 2 }}>
         Location {location.locationid}
       </div>
