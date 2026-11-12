@@ -27,6 +27,7 @@ function ControlPanel({
   const placesLib = useMapsLibrary("places");
   const inputRef = useRef<HTMLInputElement>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
 
@@ -202,6 +203,13 @@ function ControlPanel({
         >
           <SearchIcon />
         </IconButton>
+        <IconButton
+          title="Phase summary"
+          onClick={() => setSummaryOpen((v) => !v)}
+          active={summaryOpen}
+        >
+          <SummaryIcon />
+        </IconButton>
       </div>
 
       {/* Input stays mounted so autocomplete binds once; hidden when closed. */}
@@ -233,7 +241,7 @@ function ControlPanel({
         </IconButton>
       </div>
 
-      {locations.length > 0 && (
+      {summaryOpen && locations.length > 0 && (
         <table
           style={{
             width: "100%",
@@ -373,6 +381,14 @@ function SearchIcon() {
     <svg {...ICON}>
       <circle cx="11" cy="11" r="7" />
       <path d="M21 21l-4.3-4.3" />
+    </svg>
+  );
+}
+
+function SummaryIcon() {
+  return (
+    <svg {...ICON}>
+      <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
     </svg>
   );
 }
