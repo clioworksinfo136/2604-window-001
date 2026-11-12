@@ -230,11 +230,9 @@ function LocationDetails({
   onEdit?: () => void;
 }) {
   const rows: Array<[string, string]> = [];
+  // The popup shows address and contact only; the rest stay in the editor.
   if (location.address) rows.push(["Address", location.address]);
   if (location.contact) rows.push(["Contact", location.contact]);
-  if (location.phone) rows.push(["Phone", location.phone]);
-  if (location.email) rows.push(["Email", location.email]);
-  if (location.comments) rows.push(["Comments", location.comments]);
 
   return (
     <div style={{ minWidth: 180, color: "#222", fontSize: "0.85rem" }}>
