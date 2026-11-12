@@ -3,19 +3,19 @@ import { getUrl, remove, uploadData } from "aws-amplify/storage";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
 
-type Project = Schema["Project"]["type"];
+type Task = Schema["Task"]["type"];
 type Photo = Schema["Photo"]["type"];
 
 function errMsg(e: unknown) {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** Photos attached to a single project/task, each with its own note. */
+/** Photos attached to a single task, each with its own note. */
 function PhotoModal({
-  project,
+  task,
   onClose,
 }: {
-  project: Project;
+  task: Task;
   onClose: () => void;
 }) {
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -43,7 +43,7 @@ function PhotoModal({
       return;
     }
     const sub = photoModel.observeQuery({
-      filter: { projectId: { eq: project.id } },
+      filter: { taskId: { eq: task.id } },
     }).subscribe({
       next: ({ items }) => {
         setPhotos([...items]);
@@ -55,7 +55,7 @@ function PhotoModal({
       },
     });
     return () => sub.unsubscribe();
-  }, [project.id, photoModel]);
+  }, [task.id, photoModel]);
 
   // Resolve a signed URL for each photo we haven't fetched yet.
   useEffect(() => {
@@ -85,10 +85,10 @@ function PhotoModal({
     try {
       for (const file of files) {
         const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const path = `photos/${project.id}/${Date.now()}-${safe}`;
+        const path = `photos/${task.id}/${Date.now()}-${safe}`;
         await uploadData({ path, data: file }).result;
         await photoModel.create({
-          projectId: project.id,
+          taskId: task.id,
           path,
           note: "",
         });
@@ -165,7 +165,7 @@ function PhotoModal({
           }}
         >
           <h2 style={{ margin: 0, fontSize: "1.1rem" }}>
-            Photos · {project.project ?? "Project"}
+            Photos · {task.task ?? "Task"}
           </h2>
           <button
             type="button"

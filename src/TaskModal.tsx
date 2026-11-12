@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
+import PhotoModal from "./PhotoModal";
 
 type Task = Schema["Task"]["type"];
 type Project = Schema["Project"]["type"];
@@ -30,6 +31,7 @@ function TaskModal({
   const [draftTask, setDraftTask] = useState("");
   const [draftPhase, setDraftPhase] = useState("");
   const [phases, setPhases] = useState<Phase[]>([]);
+  const [photosFor, setPhotosFor] = useState<Task | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Phase options come from the Phase table, ordered by phaseid.
@@ -318,6 +320,13 @@ function TaskModal({
                         Edit
                       </button>
                       <button
+                        style={actionBtn}
+                        onClick={() => setPhotosFor(t)}
+                        disabled={editingId !== null}
+                      >
+                        Photos
+                      </button>
+                      <button
                         style={{ ...actionBtn, color: "#b00020" }}
                         onClick={() => remove(t)}
                         disabled={editingId !== null}
@@ -332,6 +341,10 @@ function TaskModal({
           </table>
         )}
       </div>
+
+      {photosFor && (
+        <PhotoModal task={photosFor} onClose={() => setPhotosFor(null)} />
+      )}
     </div>
   );
 }

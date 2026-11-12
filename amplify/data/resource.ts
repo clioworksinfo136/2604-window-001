@@ -40,6 +40,8 @@ Task: a
       // predate this relationship stay readable until they are assigned.
       projectId: a.id(),
       project: a.belongsTo("Project", "projectId"),
+      // A task owns many photos.
+      photos: a.hasMany("Photo", "taskId"),
     })
     .authorization((allow) => [allow.publicApiKey()]),
 Phase: a
@@ -50,8 +52,12 @@ Phase: a
     .authorization((allow) => [allow.publicApiKey()]),
 Photo: a
     .model({
-      // Project.id this photo belongs to
-      projectId: a.string().required(),
+      // Task this photo belongs to.
+      taskId: a.id(),
+      task: a.belongsTo("Task", "taskId"),
+      // Legacy owner from when photos hung off a project. Kept, and no
+      // longer required, so photos taken before the move stay readable.
+      projectId: a.string(),
       // S3 path under the "photos/" prefix
       path: a.string().required(),
       note: a.string(),

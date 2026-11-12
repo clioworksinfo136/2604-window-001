@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
-import PhotoModal from "./PhotoModal";
 import TaskModal from "./TaskModal";
 
 type Location = Schema["Location"]["type"];
@@ -35,7 +34,6 @@ function ProjectModal({
     enddate: "",
   });
   const [busy, setBusy] = useState(false);
-  const [photosFor, setPhotosFor] = useState<Project | null>(null);
   const [tasksFor, setTasksFor] = useState<Project | null>(null);
 
   useEffect(() => {
@@ -352,13 +350,6 @@ function ProjectModal({
                         Tasks
                       </button>
                       <button
-                        style={actionBtn}
-                        onClick={() => setPhotosFor(p)}
-                        disabled={editingId !== null}
-                      >
-                        Photos
-                      </button>
-                      <button
                         style={{ ...actionBtn, color: "#b00020" }}
                         onClick={() => removeProject(p)}
                         disabled={editingId !== null}
@@ -374,9 +365,6 @@ function ProjectModal({
         )}
       </div>
 
-      {photosFor && (
-        <PhotoModal project={photosFor} onClose={() => setPhotosFor(null)} />
-      )}
       {tasksFor && (
         <TaskModal project={tasksFor} onClose={() => setTasksFor(null)} />
       )}
