@@ -26,7 +26,6 @@ Project: a
       startdate: a.date(),
       enddate: a.date(),
       description: a.string(),
-      phase: a.string().required(),
       // A project owns many tasks.
       tasks: a.hasMany("Task", "projectId"),
     })
@@ -35,6 +34,8 @@ Task: a
     .model({
       taskid: a.integer().required(),
       task: a.string(),
+      // Phase now lives on the task rather than the project.
+      phase: a.string().required(),
       // Each task belongs to exactly one project. Optional so tasks that
       // predate this relationship stay readable until they are assigned.
       projectId: a.id(),

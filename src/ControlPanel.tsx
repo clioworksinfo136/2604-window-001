@@ -6,6 +6,7 @@ import { client } from "./client";
 type Location = Schema["Location"]["type"];
 type Phase = Schema["Phase"]["type"];
 type Project = Schema["Project"]["type"];
+type Task = Schema["Task"]["type"];
 
 /** Single top-left panel holding the Location, Task, and Search controls. */
 function ControlPanel({
@@ -28,6 +29,7 @@ function ControlPanel({
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   // Phase list and all projects feed the summary table below the controls.
   useEffect(() => {
@@ -37,6 +39,14 @@ function ControlPanel({
           [...items].sort((a, b) => (a.phaseid ?? 0) - (b.phaseid ?? 0))
         ),
       error: () => setPhases([]),
+    });
+    return () => sub.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const sub = client.models.Task.observeQuery().subscribe({
+      next: ({ items }) => setTasks([...items]),
+      error: () => setTasks([]),
     });
     return () => sub.unsubscribe();
   }, []);
@@ -117,26 +127,31 @@ function ControlPanel({
     locations.map((l) => l.locationid).filter((v): v is number => v != null)
   );
 
-  /** How many points have at least one project in this phase. */
+  // project.id -> the point it sits on
+  const projectPoint = new Map(
+    projects
+      .filter((p) => p.locationid != null && pointIds.has(p.locationid))
+      .map((p) => [p.id, p.locationid as number])
+  );
+
+  /** How many points have at least one task in this phase. */
   function pointsInPhase(phaseName: string) {
     const ids = new Set<number>();
-    for (const p of projects) {
-      if (
-        p.phase === phaseName &&
-        p.locationid != null &&
-        pointIds.has(p.locationid)
-      ) {
-        ids.add(p.locationid);
-      }
+    for (const t of tasks) {
+      if (t.phase !== phaseName || !t.projectId) continue;
+      const point = projectPoint.get(t.projectId);
+      if (point != null) ids.add(point);
     }
     return ids.size;
   }
 
-  const pointsWithProjects = new Set(
-    projects.map((p) => p.locationid).filter((v): v is number => v != null)
+  const pointsWithTasks = new Set(
+    tasks
+      .map((t) => (t.projectId ? projectPoint.get(t.projectId) : undefined))
+      .filter((v): v is number => v != null)
   );
   const unassignedCount = [...pointIds].filter(
-    (id) => !pointsWithProjects.has(id)
+    (id) => !pointsWithTasks.has(id)
   ).length;
 
   return (
@@ -264,7 +279,7 @@ function ControlPanel({
             ))}
             {unassignedCount > 0 && (
               <tr>
-                <td style={{ ...sumCell, color: "#888" }}>No project</td>
+                <td style={{ ...sumCell, color: "#888" }}>No tasks</td>
                 <td style={{ ...sumCell, textAlign: "right", color: "#888" }}>
                   {unassignedCount}
                 </td>

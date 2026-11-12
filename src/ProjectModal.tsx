@@ -6,7 +6,6 @@ import TaskModal from "./TaskModal";
 
 type Location = Schema["Location"]["type"];
 type Project = Schema["Project"]["type"];
-type Phase = Schema["Phase"]["type"];
 
 function errMsg(e: unknown) {
   return e instanceof Error ? e.message : String(e);
@@ -24,7 +23,6 @@ function ProjectModal({
   autoAdd?: boolean;
 }) {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [phases, setPhases] = useState<Phase[]>([]);
   const [status, setStatus] = useState<"loading" | "loaded" | "error">(
     "loading"
   );
@@ -33,7 +31,6 @@ function ProjectModal({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState({
     project: "",
-    phase: "",
     startdate: "",
     enddate: "",
   });
@@ -57,55 +54,18 @@ function ProjectModal({
     return () => sub.unsubscribe();
   }, [location.locationid]);
 
-  // Phases come from the Phase table and populate the Phase dropdown.
-  useEffect(() => {
-    const sub = client.models.Phase.observeQuery().subscribe({
-      next: ({ items }) =>
-        setPhases(
-          [...items].sort((a, b) => (a.phaseid ?? 0) - (b.phaseid ?? 0))
-        ),
-      error: () => setPhases([]),
-    });
-    return () => sub.unsubscribe();
-  }, []);
-
   const autoAddDone = useRef(false);
   useEffect(() => {
-    if (!autoAdd || autoAddDone.current || phases.length === 0) return;
+    if (!autoAdd || autoAddDone.current) return;
     autoAddDone.current = true;
     startAdd();
-    // startAdd only reads phases, which this effect already waits for.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoAdd, phases]);
-
-  // Phase order follows phaseid; keep any existing value as an option.
-  const phaseNames = phases.map((p) => p.phase ?? "").filter((p) => p !== "");
-  const phaseOptions = phaseNames.includes(draft.phase)
-    ? phaseNames
-    : draft.phase
-      ? [...phaseNames, draft.phase]
-      : phaseNames;
-
-  const phaseSelect = (
-    <select
-      style={editInput}
-      value={draft.phase}
-      onChange={(e) => setDraft({ ...draft, phase: e.target.value })}
-    >
-      <option value="">— select —</option>
-      {phaseOptions.map((p) => (
-        <option key={p} value={p}>
-          {p}
-        </option>
-      ))}
-    </select>
-  );
+  }, [autoAdd]);
 
   function startEdit(p: Project) {
     setEditingId(p.id);
     setDraft({
       project: p.project ?? "",
-      phase: p.phase ?? "",
       startdate: p.startdate ?? "",
       enddate: p.enddate ?? "",
     });
@@ -115,8 +75,6 @@ function ProjectModal({
     setEditingId("new");
     setDraft({
       project: "",
-      // Default to the first configured phase so the required field starts valid.
-      phase: phases[0]?.phase ?? "",
       startdate: "",
       enddate: "",
     });
@@ -124,16 +82,11 @@ function ProjectModal({
 
   async function save() {
     if (!editingId) return;
-    if (!draft.phase.trim()) {
-      alert("Phase is required.");
-      return;
-    }
     setBusy(true);
     try {
       // AWSDate wants YYYY-MM-DD or null — never an empty string.
       const fields = {
         project: draft.project,
-        phase: draft.phase,
         startdate: draft.startdate || null,
         enddate: draft.enddate || null,
       };
@@ -153,31 +106,6 @@ function ProjectModal({
       alert("Could not save: " + errMsg(e));
     } finally {
       setBusy(false);
-    }
-  }
-
-  /** Options for a row's phase dropdown, keeping its current value listed. */
-  function rowPhaseOptions(current: string) {
-    return current && !phaseNames.includes(current)
-      ? [...phaseNames, current]
-      : phaseNames;
-  }
-
-  /** Change a project's phase straight from the row, without entering edit mode. */
-  async function changePhase(p: Project, phase: string) {
-    if (!phase) return; // phase is required — ignore the placeholder
-    try {
-      const { errors } = await client.models.Project.update({
-        id: p.id,
-        phase,
-      });
-      if (errors?.length) {
-        alert(
-          "Could not update phase: " + errors.map((e) => e.message).join("; ")
-        );
-      }
-    } catch (e) {
-      alert("Could not update phase: " + errMsg(e));
     }
   }
 
@@ -305,7 +233,6 @@ function ProjectModal({
             <thead>
               <tr>
                 <th style={cellHead}>Project</th>
-                <th style={{ ...cellHead, minWidth: 150 }}>Phase</th>
                 <th style={cellHead}>Start</th>
                 <th style={cellHead}>End</th>
                 <th style={{ ...cellHead, width: 220 }}>Actions</th>
@@ -324,9 +251,6 @@ function ProjectModal({
                         setDraft({ ...draft, project: e.target.value })
                       }
                     />
-                  </td>
-                  <td style={cell}>
-                    {phaseSelect}
                   </td>
                   <td style={cell}>
                     <input
@@ -375,9 +299,6 @@ function ProjectModal({
                       />
                     </td>
                     <td style={cell}>
-                      {phaseSelect}
-                    </td>
-                    <td style={cell}>
                       <input
                         type="date"
                         style={editInput}
@@ -413,21 +334,6 @@ function ProjectModal({
                 ) : (
                   <tr key={p.id}>
                     <td style={cell}>{p.project ?? ""}</td>
-                    <td style={cell}>
-                      <select
-                        style={editInput}
-                        value={p.phase ?? ""}
-                        disabled={editingId !== null}
-                        onChange={(e) => changePhase(p, e.target.value)}
-                      >
-                        {!p.phase && <option value="">— select —</option>}
-                        {rowPhaseOptions(p.phase ?? "").map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
                     <td style={cell}>{p.startdate ?? ""}</td>
                     <td style={cell}>{p.enddate ?? ""}</td>
                     <td style={{ ...cell, whiteSpace: "nowrap" }}>

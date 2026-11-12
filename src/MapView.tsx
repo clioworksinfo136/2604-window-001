@@ -354,7 +354,6 @@ function ProjectList({
           }}
         >
           <span>{p.project || "(untitled)"}</span>
-          <span style={{ color: "#888", whiteSpace: "nowrap" }}>{p.phase}</span>
         </button>
       ))}
     </div>

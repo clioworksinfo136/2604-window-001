@@ -4,6 +4,7 @@ import { client } from "./client";
 
 type Task = Schema["Task"]["type"];
 type Project = Schema["Project"]["type"];
+type Phase = Schema["Phase"]["type"];
 
 function errMsg(e: unknown) {
   return e instanceof Error ? e.message : String(e);
@@ -27,7 +28,21 @@ function TaskModal({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTaskId, setDraftTaskId] = useState("");
   const [draftTask, setDraftTask] = useState("");
+  const [draftPhase, setDraftPhase] = useState("");
+  const [phases, setPhases] = useState<Phase[]>([]);
   const [busy, setBusy] = useState(false);
+
+  // Phase options come from the Phase table, ordered by phaseid.
+  useEffect(() => {
+    const sub = client.models.Phase.observeQuery().subscribe({
+      next: ({ items }) =>
+        setPhases(
+          [...items].sort((a, b) => (a.phaseid ?? 0) - (b.phaseid ?? 0))
+        ),
+      error: () => setPhases([]),
+    });
+    return () => sub.unsubscribe();
+  }, []);
 
   useEffect(() => {
     const sub = client.models.Task.observeQuery({
@@ -52,12 +67,14 @@ function TaskModal({
     setEditingId("new");
     setDraftTaskId(String(nextId));
     setDraftTask("");
+    setDraftPhase(phases[0]?.phase ?? "");
   }
 
   function startEdit(t: Task) {
     setEditingId(t.id);
     setDraftTaskId(String(t.taskid ?? ""));
     setDraftTask(t.task ?? "");
+    setDraftPhase(t.phase ?? "");
   }
 
   function cancel() {
@@ -70,12 +87,17 @@ function TaskModal({
       alert("Task ID must be a number.");
       return;
     }
+    if (!draftPhase.trim()) {
+      alert("Phase is required.");
+      return;
+    }
     setBusy(true);
     try {
       if (editingId === "new") {
         await client.models.Task.create({
           taskid: idNum,
           task: draftTask,
+          phase: draftPhase,
           projectId: project.id,
         });
       } else if (editingId) {
@@ -83,6 +105,7 @@ function TaskModal({
           id: editingId,
           taskid: idNum,
           task: draftTask,
+          phase: draftPhase,
         });
       }
       setEditingId(null);
@@ -101,6 +124,13 @@ function TaskModal({
       alert("Delete failed: " + errMsg(e));
     }
   }
+
+  // Phase names, keeping the row value listed so it is never dropped.
+  const phaseNames = phases.map((p) => p.phase ?? "").filter((p) => p !== "");
+  const phaseOptions =
+    draftPhase && !phaseNames.includes(draftPhase)
+      ? [...phaseNames, draftPhase]
+      : phaseNames;
 
   const editorRow = (
     <tr>
@@ -121,6 +151,20 @@ function TaskModal({
           style={editInput}
           autoFocus
         />
+      </td>
+      <td style={cell}>
+        <select
+          value={draftPhase}
+          onChange={(e) => setDraftPhase(e.target.value)}
+          style={editInput}
+        >
+          <option value="">— select —</option>
+          {phaseOptions.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
       </td>
       <td style={{ ...cell, whiteSpace: "nowrap" }}>
         <button style={actionBtn} onClick={save} disabled={busy}>
@@ -244,6 +288,7 @@ function TaskModal({
               <tr>
                 <th style={cellHead}>Task ID</th>
                 <th style={cellHead}>Task</th>
+                <th style={{ ...cellHead, minWidth: 150 }}>Phase</th>
                 <th style={{ ...cellHead, width: 150 }}>Actions</th>
               </tr>
             </thead>
@@ -251,7 +296,7 @@ function TaskModal({
               {editingId === "new" && editorRow}
               {tasks.length === 0 && editingId !== "new" && (
                 <tr>
-                  <td style={cell} colSpan={3}>
+                  <td style={cell} colSpan={4}>
                     No tasks yet. Click + to add one.
                   </td>
                 </tr>
@@ -263,6 +308,7 @@ function TaskModal({
                   <tr key={t.id}>
                     <td style={cell}>{t.taskid}</td>
                     <td style={cell}>{t.task ?? ""}</td>
+                    <td style={cell}>{t.phase ?? ""}</td>
                     <td style={{ ...cell, whiteSpace: "nowrap" }}>
                       <button
                         style={actionBtn}
