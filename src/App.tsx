@@ -6,6 +6,7 @@ import MapView from "./MapView";
 import type { LocationEdits } from "./MapView";
 import ControlPanel from "./ControlPanel";
 import ProjectModal from "./ProjectModal";
+import ProjectGallery from "./ProjectGallery";
 
 const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
@@ -122,6 +123,7 @@ function App() {
         }}
         onUpdateLocation={updateLocation}
       />
+      <ProjectGallery />
       <ControlPanel
         onCreateLocation={() => setPicking((v) => !v)}
         picking={picking}
