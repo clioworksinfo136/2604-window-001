@@ -35,11 +35,7 @@ function ProjectGallery() {
     <>
       <div
         style={{
-          position: "fixed",
-          top: 16,
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 3,
+          position: "relative",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -83,7 +79,10 @@ function ProjectGallery() {
         {open && (
           <div
             style={{
+              position: "absolute",
+              top: "100%",
               marginTop: 6,
+              zIndex: 4,
               minWidth: 220,
               maxHeight: "60vh",
               overflow: "auto",

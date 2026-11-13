@@ -7,6 +7,7 @@ import type { LocationEdits } from "./MapView";
 import ControlPanel from "./ControlPanel";
 import ProjectModal from "./ProjectModal";
 import ProjectGallery from "./ProjectGallery";
+import PhaseMatrix from "./PhaseMatrix";
 
 const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
@@ -123,7 +124,29 @@ function App() {
         }}
         onUpdateLocation={updateLocation}
       />
-      <ProjectGallery />
+      {/* A transform here would make the modals inside these components
+          position against this bar instead of the viewport, so centre the
+          bar with flex and let clicks fall through to the map. */}
+      <div
+        style={{
+          position: "fixed",
+          top: 16,
+          left: 0,
+          right: 0,
+          zIndex: 3,
+          display: "flex",
+          justifyContent: "center",
+          gap: 8,
+          pointerEvents: "none",
+        }}
+      >
+        <div style={{ pointerEvents: "auto" }}>
+          <ProjectGallery />
+        </div>
+        <div style={{ pointerEvents: "auto" }}>
+          <PhaseMatrix />
+        </div>
+      </div>
       <ControlPanel
         onCreateLocation={() => setPicking((v) => !v)}
         picking={picking}
