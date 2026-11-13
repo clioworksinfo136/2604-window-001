@@ -5,6 +5,11 @@ type Photo = Schema["Photo"]["type"];
 
 export type SortKey = "date" | "note";
 
+/** A photo date with no hour or minute. */
+export function photoDate(createdAt?: string | null) {
+  return createdAt ? new Date(createdAt).toLocaleDateString() : "";
+}
+
 /** Newest first by date, or alphabetical by note with blank notes last. */
 export function sortPhotos(photos: Photo[], sort: SortKey) {
   return [...photos].sort((a, b) => {
@@ -210,7 +215,7 @@ function PhotoCarousel({
           )}
         </div>
         <div style={{ marginTop: 4, fontSize: "0.76rem", color: "#aaa" }}>
-          {photo.createdAt ? new Date(photo.createdAt).toLocaleString() : ""}
+          {photoDate(photo.createdAt)}
         </div>
       </div>
     </div>

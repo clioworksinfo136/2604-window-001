@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getUrl } from "aws-amplify/storage";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
+import { photoDate } from "./PhotoCarousel";
 
 type Project = Schema["Project"]["type"];
 type Task = Schema["Task"]["type"];
@@ -416,9 +417,7 @@ function GalleryModal({
                             color: "#999",
                           }}
                         >
-                          {photo.createdAt
-                            ? new Date(photo.createdAt).toLocaleString()
-                            : ""}
+                          {photoDate(photo.createdAt)}
                         </div>
                       </figcaption>
                     </figure>

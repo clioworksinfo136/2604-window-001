@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getUrl } from "aws-amplify/storage";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
-import PhotoCarousel from "./PhotoCarousel";
+import PhotoCarousel, { photoDate } from "./PhotoCarousel";
 
 type Project = Schema["Project"]["type"];
 type Task = Schema["Task"]["type"];
@@ -398,6 +398,15 @@ function MatrixModal({
                                     {photo.note?.trim() || (
                                       <em style={{ color: "#aaa" }}>No note</em>
                                     )}
+                                    <div
+                                      style={{
+                                        marginTop: 2,
+                                        color: "#999",
+                                        fontSize: "0.65rem",
+                                      }}
+                                    >
+                                      {photoDate(photo.createdAt)}
+                                    </div>
                                   </figcaption>
                                 </figure>
                               ))}
