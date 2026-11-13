@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getUrl } from "aws-amplify/storage";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
+import PhotoCarousel from "./PhotoCarousel";
 
 type Project = Schema["Project"]["type"];
 type Task = Schema["Task"]["type"];
@@ -153,6 +154,11 @@ function MatrixModal({
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const resolved = useRef<Set<string>>(new Set());
+  // Which cell is open in the carousel, and which photo it started on.
+  const [viewer, setViewer] = useState<{
+    photos: Photo[];
+    startId: string;
+  } | null>(null);
 
   useEffect(() => {
     const sub = client.models.Task.observeQuery({
@@ -337,11 +343,23 @@ function MatrixModal({
                                   }}
                                 >
                                   {photo.path && urls[photo.path] ? (
-                                    <a
-                                      href={urls[photo.path]}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      title="Open full size"
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setViewer({
+                                          photos: mine,
+                                          startId: photo.id,
+                                        })
+                                      }
+                                      title="Open viewer"
+                                      style={{
+                                        display: "block",
+                                        width: "100%",
+                                        padding: 0,
+                                        border: "none",
+                                        background: "transparent",
+                                        cursor: "pointer",
+                                      }}
                                     >
                                       <img
                                         src={urls[photo.path]}
@@ -353,7 +371,7 @@ function MatrixModal({
                                           display: "block",
                                         }}
                                       />
-                                    </a>
+                                    </button>
                                   ) : (
                                     <div
                                       style={{
@@ -395,6 +413,15 @@ function MatrixModal({
           </div>
         )}
       </div>
+
+      {viewer && (
+        <PhotoCarousel
+          photos={viewer.photos}
+          urls={urls}
+          startId={viewer.startId}
+          onClose={() => setViewer(null)}
+        />
+      )}
     </div>
   );
 }
