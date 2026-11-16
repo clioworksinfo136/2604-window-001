@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState } from "react";
+import { getUrl, uploadData } from "aws-amplify/storage";
 import { InfoWindow, Map, Marker } from "@vis.gl/react-google-maps";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
+import PhotoCarousel, { photoDate } from "./PhotoCarousel";
+import ProjectReportModal from "./ProjectReportModal";
 
 type Location = Schema["Location"]["type"];
 type Project = Schema["Project"]["type"];
+type Task = Schema["Task"]["type"];
+type Phase = Schema["Phase"]["type"];
+type Photo = Schema["Photo"]["type"];
 
 /** Editable fields on a location (coordinates come from the map pin). */
 export type LocationEdits = {
@@ -36,7 +42,6 @@ function MapView({
   onMapClick,
   locations = [],
   onDeleteLocation,
-  onListProjects,
   onAddProject,
   onUpdateLocation,
 }: {
@@ -45,7 +50,6 @@ function MapView({
   onMapClick?: (latLng: google.maps.LatLngLiteral) => void;
   locations?: Location[];
   onDeleteLocation?: (location: Location) => void;
-  onListProjects?: (location: Location) => void;
   onAddProject?: (location: Location) => void;
   onUpdateLocation?: (
     location: Location,
@@ -55,12 +59,54 @@ function MapView({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [phases, setPhases] = useState<Phase[]>([]);
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const resolved = useRef<Set<string>>(new Set());
+  const [viewer, setViewer] = useState<{
+    taskId: string;
+    startId: string;
+  } | null>(null);
+  const [reportProjectId, setReportProjectId] = useState<string | null>(null);
 
-  // All projects, so the popup can list the ones at the selected point.
+  // All projects, tasks, phases, and photos, so the popup can expand projects
+  // into tasks, add tasks inline, and show/upload task photos.
   useEffect(() => {
     const sub = client.models.Project.observeQuery().subscribe({
       next: ({ items }) => setProjects([...items]),
       error: () => setProjects([]),
+    });
+    return () => sub.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const sub = client.models.Task.observeQuery().subscribe({
+      next: ({ items }) => setTasks([...items]),
+      error: () => setTasks([]),
+    });
+    return () => sub.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const sub = client.models.Phase.observeQuery().subscribe({
+      next: ({ items }) =>
+        setPhases(
+          [...items].sort((a, b) => (a.phaseid ?? 0) - (b.phaseid ?? 0))
+        ),
+      error: () => setPhases([]),
+    });
+    return () => sub.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    const photoModel = client.models.Photo as
+      | typeof client.models.Photo
+      | undefined;
+    if (!photoModel) return;
+    const sub = photoModel.observeQuery().subscribe({
+      next: ({ items }) => setPhotos([...items]),
+      error: () => setPhotos([]),
     });
     return () => sub.unsubscribe();
   }, []);
@@ -96,6 +142,46 @@ function MapView({
 
   // Resolve against the live list so the popup reflects the latest data.
   const selected = locations.find((l) => l.id === selectedId) ?? null;
+  const selectedLocationId = selected?.locationid ?? null;
+  const reportProject = reportProjectId
+    ? (projects.find((p) => p.id === reportProjectId) ?? null)
+    : null;
+
+  // Resolve signed S3 URLs for photos belonging to the selected location's
+  // tasks or an open project report.
+  useEffect(() => {
+    if (selectedLocationId === null && !reportProjectId) return;
+    const projectIds = new Set<string>();
+    if (selectedLocationId !== null) {
+      for (const p of projects) {
+        if (p.locationid === selectedLocationId) projectIds.add(p.id);
+      }
+    }
+    if (reportProjectId) projectIds.add(reportProjectId);
+    const taskIds = new Set(
+      tasks
+        .filter((t) => t.projectId && projectIds.has(t.projectId))
+        .map((t) => t.id)
+    );
+    let active = true;
+    (async () => {
+      for (const p of photos) {
+        if (!p.taskId || !taskIds.has(p.taskId)) continue;
+        if (!p.path || resolved.current.has(p.path)) continue;
+        resolved.current.add(p.path);
+        try {
+          const { url } = await getUrl({ path: p.path });
+          if (!active) return;
+          setUrls((u) => ({ ...u, [p.path]: url.toString() }));
+        } catch {
+          resolved.current.delete(p.path);
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [selectedLocationId, reportProjectId, projects, tasks, photos]);
   // Hover preview, suppressed while that same point's popup is already open.
   const hovered =
     hoveredId && hoveredId !== selectedId
@@ -212,10 +298,18 @@ function MapView({
                 onEdit={() => startEdit(selected)}
               />
               <ProjectList
+                key={selected.id}
                 projects={projects.filter(
                   (p) => p.locationid === selected.locationid
                 )}
-                onOpen={() => onListProjects?.(selected)}
+                tasks={tasks}
+                phases={phases}
+                photos={photos}
+                urls={urls}
+                onViewPhoto={(taskId, startId) =>
+                  setViewer({ taskId, startId })
+                }
+                onOpenReport={(projectId) => setReportProjectId(projectId)}
               />
               <div
                 style={{
@@ -265,6 +359,29 @@ function MapView({
 
         {searched && <Marker position={searched} title="Search result" />}
       </Map>
+
+      {reportProject && (
+        <ProjectReportModal
+          key={reportProject.id}
+          project={reportProject}
+          tasks={tasks}
+          phases={phases}
+          photos={photos}
+          urls={urls}
+          viewerOpen={viewer !== null}
+          onViewPhoto={(taskId, startId) => setViewer({ taskId, startId })}
+          onClose={() => setReportProjectId(null)}
+        />
+      )}
+
+      {viewer && (
+        <PhotoCarousel
+          photos={photos.filter((p) => p.taskId === viewer.taskId)}
+          urls={urls}
+          startId={viewer.startId}
+          onClose={() => setViewer(null)}
+        />
+      )}
     </div>
   );
 }
@@ -312,15 +429,89 @@ function LocationDetails({
   );
 }
 
-/** Projects at this point, listed under the heading. Clicking one opens
- * the full projects view for the location. */
+/** Projects at this point, listed under the heading. Clicking a project
+ * expands or collapses its tasks beneath it, and clicking a task expands or
+ * collapses that task's details and photos beneath the task. */
 function ProjectList({
   projects,
-  onOpen,
+  tasks,
+  phases,
+  photos,
+  urls,
+  onViewPhoto,
+  onOpenReport,
 }: {
   projects: Project[];
-  onOpen: () => void;
+  tasks: Task[];
+  phases: Phase[];
+  photos: Photo[];
+  urls: Record<string, string>;
+  onViewPhoto: (taskId: string, startId: string) => void;
+  onOpenReport: (projectId: string) => void;
 }) {
+  const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [addingProjectId, setAddingProjectId] = useState<string | null>(null);
+  const [newTaskName, setNewTaskName] = useState("");
+  const [newTaskPhase, setNewTaskPhase] = useState("");
+  const [savingTask, setSavingTask] = useState(false);
+
+  const phaseNames = phases.map((ph) => ph.phase ?? "").filter(Boolean);
+
+  function toggleProject(projectId: string, projectTasks: Task[]) {
+    const closing = expandedProjectIds.has(projectId);
+    setExpandedProjectIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) next.delete(projectId);
+      else next.add(projectId);
+      return next;
+    });
+    if (closing && projectTasks.some((t) => t.id === expandedTaskId)) {
+      setExpandedTaskId(null);
+    }
+  }
+
+  function startAddTask(projectId: string) {
+    setAddingProjectId(projectId);
+    setNewTaskName("");
+    setNewTaskPhase(phaseNames[0] ?? "");
+  }
+
+  async function saveNewTask(projectId: string, projectTasks: Task[]) {
+    if (!newTaskPhase.trim()) {
+      alert("Phase is required.");
+      return;
+    }
+    const nextId = projectTasks.length
+      ? Math.max(...projectTasks.map((t) => t.taskid ?? 0)) + 1
+      : 1;
+    setSavingTask(true);
+    try {
+      const { errors } = await client.models.Task.create({
+        taskid: nextId,
+        task: newTaskName.trim(),
+        phase: newTaskPhase.trim(),
+        projectId,
+      });
+      if (errors?.length) {
+        alert(
+          "Could not create task: " + errors.map((e) => e.message).join("; ")
+        );
+        return;
+      }
+      setAddingProjectId(null);
+    } catch (e: unknown) {
+      alert(
+        "Could not create task: " +
+          (e instanceof Error ? e.message : String(e))
+      );
+    } finally {
+      setSavingTask(false);
+    }
+  }
+
   if (projects.length === 0) {
     return (
       <div style={{ marginTop: 6, fontSize: "0.8rem", color: "#888" }}>
@@ -331,32 +522,503 @@ function ProjectList({
 
   return (
     <div style={{ marginTop: 6, display: "flex", flexDirection: "column" }}>
-      {projects.map((p) => (
-        <button
-          key={p.id}
-          type="button"
-          onClick={onOpen}
-          title="Open projects"
+      {projects.map((p) => {
+        const open = expandedProjectIds.has(p.id);
+        const projectTasks = tasks
+          .filter((t) => t.projectId === p.id)
+          .sort((a, b) => (a.taskid ?? 0) - (b.taskid ?? 0));
+
+        return (
+          <div key={p.id} style={{ borderTop: "1px solid #eee" }}>
+            <button
+              type="button"
+              onClick={() => toggleProject(p.id, projectTasks)}
+              aria-expanded={open}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                width: "100%",
+                textAlign: "left",
+                background: "transparent",
+                border: "none",
+                padding: "4px 0",
+                font: "inherit",
+                fontSize: "0.8rem",
+                fontWeight: open ? 600 : 400,
+                color: "#222",
+                cursor: "pointer",
+              }}
+            >
+              <span>{p.project || "(untitled)"}</span>
+              <span
+                aria-hidden="true"
+                style={{ color: "#888", fontSize: "0.72rem", lineHeight: 1 }}
+              >
+                {open ? "▾" : "▸"}
+              </span>
+            </button>
+
+            {open && (
+              <div style={{ paddingBottom: 6 }}>
+                {projectTasks.length === 0 ? (
+                  <div
+                    style={{
+                      padding: "2px 0 2px 12px",
+                      fontSize: "0.76rem",
+                      color: "#888",
+                    }}
+                  >
+                    No tasks yet.
+                  </div>
+                ) : (
+                  projectTasks.map((t) => {
+                    const taskOpen = expandedTaskId === t.id;
+                    const taskPhotos = photos
+                      .filter((ph) => ph.taskId === t.id)
+                      .sort((a, b) =>
+                        (b.createdAt ?? "").localeCompare(a.createdAt ?? "")
+                      );
+
+                    return (
+                      <div key={t.id}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedTaskId((prev) =>
+                              prev === t.id ? null : t.id
+                            )
+                          }
+                          aria-expanded={taskOpen}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            width: "100%",
+                            textAlign: "left",
+                            background: "transparent",
+                            border: "none",
+                            padding: "2px 0 2px 12px",
+                            font: "inherit",
+                            fontSize: "0.76rem",
+                            fontWeight: taskOpen ? 600 : 400,
+                            color: "#333",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <span>{t.task || `Task ${t.taskid}`}</span>
+                          <span
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                              color: "#888",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {t.phase && <span>{t.phase}</span>}
+                            <span
+                              aria-hidden="true"
+                              style={{ fontSize: "0.7rem", lineHeight: 1 }}
+                            >
+                              {taskOpen ? "▾" : "▸"}
+                            </span>
+                          </span>
+                        </button>
+
+                        {taskOpen && (
+                          <TaskDetails
+                            task={t}
+                            photos={taskPhotos}
+                            urls={urls}
+                            onViewPhoto={(startId) =>
+                              onViewPhoto(t.id, startId)
+                            }
+                          />
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+
+                {addingProjectId === p.id ? (
+                  <div
+                    style={{
+                      marginLeft: 12,
+                      marginTop: 5,
+                      padding: 6,
+                      background: "#f8f9fb",
+                      border: "1px solid #e4e4e7",
+                      borderRadius: 6,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 5,
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={newTaskName}
+                      onChange={(e) => setNewTaskName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") saveNewTask(p.id, projectTasks);
+                        else if (e.key === "Escape") setAddingProjectId(null);
+                      }}
+                      placeholder="Task name"
+                      autoFocus
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        padding: "3px 6px",
+                        fontSize: "0.76rem",
+                        border: "1px solid #ccc",
+                        borderRadius: 5,
+                        fontFamily: "inherit",
+                      }}
+                    />
+                    {phaseNames.length > 0 ? (
+                      <select
+                        value={newTaskPhase}
+                        onChange={(e) => setNewTaskPhase(e.target.value)}
+                        style={{
+                          width: "100%",
+                          boxSizing: "border-box",
+                          padding: "3px 6px",
+                          fontSize: "0.76rem",
+                          border: "1px solid #ccc",
+                          borderRadius: 5,
+                          fontFamily: "inherit",
+                          background: "#fff",
+                        }}
+                      >
+                        <option value="">— select phase —</option>
+                        {phaseNames.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={newTaskPhase}
+                        onChange={(e) => setNewTaskPhase(e.target.value)}
+                        placeholder="Phase"
+                        style={{
+                          width: "100%",
+                          boxSizing: "border-box",
+                          padding: "3px 6px",
+                          fontSize: "0.76rem",
+                          border: "1px solid #ccc",
+                          borderRadius: 5,
+                          fontFamily: "inherit",
+                        }}
+                      />
+                    )}
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        type="button"
+                        onClick={() => saveNewTask(p.id, projectTasks)}
+                        disabled={savingTask}
+                        style={{
+                          background: "#e8f0fe",
+                          color: "#1a73e8",
+                          border: "none",
+                          borderRadius: 5,
+                          padding: "3px 9px",
+                          fontSize: "0.74rem",
+                          fontWeight: 600,
+                          cursor: savingTask ? "default" : "pointer",
+                        }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAddingProjectId(null)}
+                        disabled={savingTask}
+                        style={{
+                          background: "#fff",
+                          color: "#444",
+                          border: "1px solid #ddd",
+                          borderRadius: 5,
+                          padding: "3px 9px",
+                          fontSize: "0.74rem",
+                          fontWeight: 600,
+                          cursor: savingTask ? "default" : "pointer",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      marginLeft: 12,
+                      marginTop: 5,
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => startAddTask(p.id)}
+                      style={{
+                        background: "#e8f0fe",
+                        color: "#1a73e8",
+                        border: "none",
+                        borderRadius: 5,
+                        padding: "3px 9px",
+                        fontSize: "0.74rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      New Task
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onOpenReport(p.id)}
+                      style={{
+                        background: "#fff",
+                        color: "#1a73e8",
+                        border: "1px solid #c6dafc",
+                        borderRadius: 5,
+                        padding: "3px 9px",
+                        fontSize: "0.74rem",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                      }}
+                    >
+                      New Report
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Inline details shown directly beneath an expanded task. */
+function TaskDetails({
+  task,
+  photos,
+  urls,
+  onViewPhoto,
+}: {
+  task: Task;
+  photos: Photo[];
+  urls: Record<string, string>;
+  onViewPhoto: (startId: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const photoModel = client.models.Photo as
+    | typeof client.models.Photo
+    | undefined;
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length || !photoModel) return;
+    setUploading(true);
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const path = `photos/${task.id}/${Date.now()}-${i}-${safe}`;
+        await uploadData({ path, data: file }).result;
+        const { errors } = await photoModel.create({
+          taskId: task.id,
+          path,
+          note: "",
+        });
+        if (errors?.length) {
+          throw new Error(errors.map((err) => err.message).join("; "));
+        }
+      }
+    } catch (err: unknown) {
+      alert(
+        "Upload failed: " + (err instanceof Error ? err.message : String(err))
+      );
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  return (
+    <div
+      style={{
+        marginLeft: 16,
+        marginTop: 2,
+        marginBottom: 6,
+        padding: "4px 0 4px 8px",
+        borderLeft: "2px solid #e8f0fe",
+        fontSize: "0.74rem",
+        color: "#444",
+      }}
+    >
+      <div style={{ lineHeight: 1.45 }}>
+        <div>
+          <span style={{ color: "#777" }}>Task ID: </span>
+          <span style={{ color: "#222" }}>{task.taskid}</span>
+        </div>
+        <div>
+          <span style={{ color: "#777" }}>Phase: </span>
+          <span style={{ color: "#222" }}>{task.phase || "—"}</span>
+        </div>
+      </div>
+
+      {photos.length === 0 ? (
+        <div style={{ marginTop: 4, fontSize: "0.72rem", color: "#888" }}>
+          No photos.
+        </div>
+      ) : (
+        <div
           style={{
+            marginTop: 6,
             display: "flex",
-            justifyContent: "space-between",
-            gap: 10,
-            width: "100%",
-            textAlign: "left",
-            background: "transparent",
-            border: "none",
-            borderTop: "1px solid #eee",
-            padding: "4px 0",
-            font: "inherit",
-            fontSize: "0.8rem",
-            color: "#222",
-            cursor: "pointer",
+            flexWrap: "wrap",
+            gap: 6,
+            maxWidth: 268,
           }}
         >
-          <span>{p.project || "(untitled)"}</span>
-        </button>
-      ))}
+          {photos.map((photo) => (
+            <figure
+              key={photo.id}
+              style={{
+                margin: 0,
+                width: 84,
+                border: "1px solid #e4e4e7",
+                borderRadius: 6,
+                overflow: "hidden",
+                background: "#fff",
+              }}
+            >
+              {photo.path && urls[photo.path] ? (
+                <button
+                  type="button"
+                  onClick={() => onViewPhoto(photo.id)}
+                  title="Open photo viewer"
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: 0,
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                  }}
+                >
+                  <img
+                    src={urls[photo.path]}
+                    alt={photo.note ?? "Task photo"}
+                    style={{
+                      width: "100%",
+                      height: 56,
+                      objectFit: "cover",
+                      display: "block",
+                    }}
+                  />
+                </button>
+              ) : (
+                <div
+                  style={{
+                    height: 56,
+                    background: "#f4f4f6",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#aaa",
+                    fontSize: "0.62rem",
+                  }}
+                >
+                  Loading…
+                </div>
+              )}
+              <figcaption
+                style={{
+                  padding: "3px 5px",
+                  fontSize: "0.68rem",
+                  color: "#333",
+                  lineHeight: 1.25,
+                  wordBreak: "break-word",
+                }}
+              >
+                {photo.note?.trim() || (
+                  <em style={{ color: "#aaa" }}>No note</em>
+                )}
+                <div
+                  style={{
+                    marginTop: 2,
+                    color: "#999",
+                    fontSize: "0.62rem",
+                  }}
+                >
+                  {photoDate(photo.createdAt)}
+                </div>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
+
+      <label
+        title={uploading ? "Uploading…" : "Upload photo"}
+        aria-label="Upload photo"
+        style={{
+          marginTop: 6,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 5,
+          padding: "4px 8px",
+          borderRadius: 6,
+          border: "1px solid #d2e3fc",
+          background: "#f4f8fe",
+          color: "#1a73e8",
+          fontSize: "0.72rem",
+          fontWeight: 600,
+          cursor: uploading || !photoModel ? "default" : "pointer",
+          opacity: uploading || !photoModel ? 0.6 : 1,
+        }}
+      >
+        <CameraIcon />
+        {uploading && <span>Uploading…</span>}
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          disabled={uploading || !photoModel}
+          onChange={handleUpload}
+          style={{ display: "none" }}
+        />
+      </label>
     </div>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+      <circle cx="12" cy="13" r="4" />
+    </svg>
   );
 }
 

@@ -63,3 +63,42 @@ a {
   font-weight: 800;
   text-decoration: none;
 }
+
+@keyframes report-backdrop-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes report-waterfall-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-44px) scaleY(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@keyframes report-row-cascade {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-backdrop,
+  .report-waterfall-panel,
+  .report-waterfall-row {
+    animation: none !important;
+  }
+}

@@ -6,8 +6,6 @@ import MapView from "./MapView";
 import type { LocationEdits } from "./MapView";
 import ControlPanel from "./ControlPanel";
 import ProjectModal from "./ProjectModal";
-import ProjectGallery from "./ProjectGallery";
-import PhaseMatrix from "./PhaseMatrix";
 
 const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
@@ -19,7 +17,6 @@ function App() {
     null
   );
   const [picking, setPicking] = useState(false);
-  const [projectsAdd, setProjectsAdd] = useState(false);
   const [projectsFor, setProjectsFor] = useState<
     Schema["Location"]["type"] | null
   >(null);
@@ -114,39 +111,9 @@ function App() {
         onMapClick={handleMapClick}
         locations={locations}
         onDeleteLocation={deleteLocation}
-        onListProjects={(l) => {
-          setProjectsAdd(false);
-          setProjectsFor(l);
-        }}
-        onAddProject={(l) => {
-          setProjectsAdd(true);
-          setProjectsFor(l);
-        }}
+        onAddProject={(l) => setProjectsFor(l)}
         onUpdateLocation={updateLocation}
       />
-      {/* A transform here would make the modals inside these components
-          position against this bar instead of the viewport, so centre the
-          bar with flex and let clicks fall through to the map. */}
-      <div
-        style={{
-          position: "fixed",
-          top: 16,
-          left: 0,
-          right: 0,
-          zIndex: 3,
-          display: "flex",
-          justifyContent: "center",
-          gap: 8,
-          pointerEvents: "none",
-        }}
-      >
-        <div style={{ pointerEvents: "auto" }}>
-          <ProjectGallery />
-        </div>
-        <div style={{ pointerEvents: "auto" }}>
-          <PhaseMatrix />
-        </div>
-      </div>
       <ControlPanel
         onCreateLocation={() => setPicking((v) => !v)}
         picking={picking}
@@ -157,7 +124,7 @@ function App() {
       {projectsFor && (
         <ProjectModal
           location={projectsFor}
-          autoAdd={projectsAdd}
+          autoAdd
           onClose={() => setProjectsFor(null)}
         />
       )}
