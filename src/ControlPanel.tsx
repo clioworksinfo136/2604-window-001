@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMap, useMapsLibrary } from "@vis.gl/react-google-maps";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
+import { getTaskPhases } from "./taskPhases";
 
 type Location = Schema["Location"]["type"];
 type Phase = Schema["Phase"]["type"];
@@ -138,7 +139,7 @@ function ControlPanel({
   function pointsInPhase(phaseName: string) {
     const ids = new Set<number>();
     for (const t of tasks) {
-      if (t.phase !== phaseName || !t.projectId) continue;
+      if (!t.projectId || !getTaskPhases(t).includes(phaseName)) continue;
       const point = projectPoint.get(t.projectId);
       if (point != null) ids.add(point);
     }

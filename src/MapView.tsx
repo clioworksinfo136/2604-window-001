@@ -5,6 +5,15 @@ import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
 import PhotoCarousel, { photoDate } from "./PhotoCarousel";
 import ProjectReportModal from "./ProjectReportModal";
+import {
+  buildPhotoStoragePath,
+  createPhotoInPhase,
+  createTaskWithPhases,
+  getPhotosForTaskPhase,
+  getTaskPhases,
+  orderPhaseNames,
+  updateTaskWithPhases,
+} from "./taskPhases";
 
 type Location = Schema["Location"]["type"];
 type Project = Schema["Project"]["type"];
@@ -66,6 +75,7 @@ function MapView({
   const resolved = useRef<Set<string>>(new Set());
   const [viewer, setViewer] = useState<{
     taskId: string;
+    phase: string;
     startId: string;
   } | null>(null);
   const [reportProjectId, setReportProjectId] = useState<string | null>(null);
@@ -306,8 +316,8 @@ function MapView({
                 phases={phases}
                 photos={photos}
                 urls={urls}
-                onViewPhoto={(taskId, startId) =>
-                  setViewer({ taskId, startId })
+                onViewPhoto={(taskId, phase, startId) =>
+                  setViewer({ taskId, phase, startId })
                 }
                 onOpenReport={(projectId) => setReportProjectId(projectId)}
               />
@@ -369,19 +379,27 @@ function MapView({
           photos={photos}
           urls={urls}
           viewerOpen={viewer !== null}
-          onViewPhoto={(taskId, startId) => setViewer({ taskId, startId })}
+          onViewPhoto={(taskId, phase, startId) =>
+            setViewer({ taskId, phase, startId })
+          }
           onClose={() => setReportProjectId(null)}
         />
       )}
 
-      {viewer && (
-        <PhotoCarousel
-          photos={photos.filter((p) => p.taskId === viewer.taskId)}
-          urls={urls}
-          startId={viewer.startId}
-          onClose={() => setViewer(null)}
-        />
-      )}
+      {viewer && (() => {
+        const viewerTask = tasks.find((t) => t.id === viewer.taskId);
+        const viewerPhotos = viewerTask
+          ? getPhotosForTaskPhase(viewerTask, viewer.phase, photos)
+          : [];
+        return (
+          <PhotoCarousel
+            photos={viewerPhotos}
+            urls={urls}
+            startId={viewer.startId}
+            onClose={() => setViewer(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -446,19 +464,25 @@ function ProjectList({
   phases: Phase[];
   photos: Photo[];
   urls: Record<string, string>;
-  onViewPhoto: (taskId: string, startId: string) => void;
+  onViewPhoto: (taskId: string, phase: string, startId: string) => void;
   onOpenReport: (projectId: string) => void;
 }) {
   const [expandedProjectIds, setExpandedProjectIds] = useState<Set<string>>(
     () => new Set()
   );
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [activePhaseByTask, setActivePhaseByTask] = useState<
+    Record<string, string>
+  >({});
   const [addingProjectId, setAddingProjectId] = useState<string | null>(null);
   const [newTaskName, setNewTaskName] = useState("");
-  const [newTaskPhase, setNewTaskPhase] = useState("");
+  const [newTaskPhases, setNewTaskPhases] = useState<string[]>([]);
+  const [newTaskCustomPhase, setNewTaskCustomPhase] = useState("");
   const [savingTask, setSavingTask] = useState(false);
 
-  const phaseNames = phases.map((ph) => ph.phase ?? "").filter(Boolean);
+  const phaseNames = phases
+    .map((ph) => (ph.phase ?? "").trim())
+    .filter(Boolean);
 
   function toggleProject(projectId: string, projectTasks: Task[]) {
     const closing = expandedProjectIds.has(projectId);
@@ -476,12 +500,29 @@ function ProjectList({
   function startAddTask(projectId: string) {
     setAddingProjectId(projectId);
     setNewTaskName("");
-    setNewTaskPhase(phaseNames[0] ?? "");
+    setNewTaskPhases(phaseNames[0] ? [phaseNames[0]] : []);
+    setNewTaskCustomPhase("");
+  }
+
+  function toggleNewTaskPhase(name: string) {
+    setNewTaskPhases((prev) =>
+      prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name]
+    );
   }
 
   async function saveNewTask(projectId: string, projectTasks: Task[]) {
-    if (!newTaskPhase.trim()) {
-      alert("Phase is required.");
+    const chosenPhases =
+      phaseNames.length > 0
+        ? orderPhaseNames(newTaskPhases, phases)
+        : orderPhaseNames(
+            newTaskCustomPhase
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean),
+            phases
+          );
+    if (chosenPhases.length === 0) {
+      alert("Select at least one phase.");
       return;
     }
     const nextId = projectTasks.length
@@ -489,10 +530,10 @@ function ProjectList({
       : 1;
     setSavingTask(true);
     try {
-      const { errors } = await client.models.Task.create({
+      const { errors } = await createTaskWithPhases({
         taskid: nextId,
         task: newTaskName.trim(),
-        phase: newTaskPhase.trim(),
+        phases: chosenPhases,
         projectId,
       });
       if (errors?.length) {
@@ -575,11 +616,21 @@ function ProjectList({
                 ) : (
                   projectTasks.map((t) => {
                     const taskOpen = expandedTaskId === t.id;
-                    const taskPhotos = photos
-                      .filter((ph) => ph.taskId === t.id)
-                      .sort((a, b) =>
-                        (b.createdAt ?? "").localeCompare(a.createdAt ?? "")
-                      );
+                    const taskPhotos = photos.filter(
+                      (ph) => ph.taskId === t.id
+                    );
+                    const taskPhases = getTaskPhases(t, taskPhotos, phases);
+                    const storedPhase = activePhaseByTask[t.id];
+                    const activePhase =
+                      storedPhase && taskPhases.includes(storedPhase)
+                        ? storedPhase
+                        : (taskPhases[0] ?? "");
+                    const summaryLabel =
+                      taskPhases.length === 0
+                        ? ""
+                        : taskPhases.length === 1
+                          ? taskPhases[0]
+                          : `${activePhase} +${taskPhases.length - 1}`;
 
                     return (
                       <div key={t.id}>
@@ -618,7 +669,7 @@ function ProjectList({
                               whiteSpace: "nowrap",
                             }}
                           >
-                            {t.phase && <span>{t.phase}</span>}
+                            {summaryLabel && <span>{summaryLabel}</span>}
                             <span
                               aria-hidden="true"
                               style={{ fontSize: "0.7rem", lineHeight: 1 }}
@@ -631,10 +682,19 @@ function ProjectList({
                         {taskOpen && (
                           <TaskDetails
                             task={t}
-                            photos={taskPhotos}
+                            taskPhases={taskPhases}
+                            activePhase={activePhase}
+                            onSelectPhase={(ph) =>
+                              setActivePhaseByTask((prev) => ({
+                                ...prev,
+                                [t.id]: ph,
+                              }))
+                            }
+                            definedPhases={phases}
+                            taskPhotos={taskPhotos}
                             urls={urls}
-                            onViewPhoto={(startId) =>
-                              onViewPhoto(t.id, startId)
+                            onViewPhoto={(phaseName, startId) =>
+                              onViewPhoto(t.id, phaseName, startId)
                             }
                           />
                         )}
@@ -678,33 +738,51 @@ function ProjectList({
                       }}
                     />
                     {phaseNames.length > 0 ? (
-                      <select
-                        value={newTaskPhase}
-                        onChange={(e) => setNewTaskPhase(e.target.value)}
+                      <div
                         style={{
-                          width: "100%",
-                          boxSizing: "border-box",
-                          padding: "3px 6px",
-                          fontSize: "0.76rem",
-                          border: "1px solid #ccc",
-                          borderRadius: 5,
-                          fontFamily: "inherit",
-                          background: "#fff",
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 4,
                         }}
                       >
-                        <option value="">— select phase —</option>
-                        {phaseNames.map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
+                        {phaseNames.map((name) => {
+                          const checked = newTaskPhases.includes(name);
+                          return (
+                            <label
+                              key={name}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4,
+                                padding: "2px 6px",
+                                borderRadius: 999,
+                                border: checked
+                                  ? "1px solid #1a73e8"
+                                  : "1px solid #d4d4d8",
+                                background: checked ? "#e8f0fe" : "#fff",
+                                color: checked ? "#1a73e8" : "#444",
+                                fontSize: "0.72rem",
+                                fontWeight: checked ? 600 : 400,
+                                cursor: "pointer",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleNewTaskPhase(name)}
+                                style={{ margin: 0, cursor: "pointer" }}
+                              />
+                              {name}
+                            </label>
+                          );
+                        })}
+                      </div>
                     ) : (
                       <input
                         type="text"
-                        value={newTaskPhase}
-                        onChange={(e) => setNewTaskPhase(e.target.value)}
-                        placeholder="Phase"
+                        value={newTaskCustomPhase}
+                        onChange={(e) => setNewTaskCustomPhase(e.target.value)}
+                        placeholder="Phase(s), comma-separated"
                         style={{
                           width: "100%",
                           boxSizing: "border-box",
@@ -807,35 +885,131 @@ function ProjectList({
   );
 }
 
-/** Inline details shown directly beneath an expanded task. */
+/** Inline details shown directly beneath an expanded task.
+ * Displays 1 active phase at a time and only the photos in that phase. */
 function TaskDetails({
   task,
-  photos,
+  taskPhases,
+  activePhase,
+  onSelectPhase,
+  definedPhases,
+  taskPhotos,
   urls,
   onViewPhoto,
 }: {
   task: Task;
-  photos: Photo[];
+  taskPhases: string[];
+  activePhase: string;
+  onSelectPhase: (phase: string) => void;
+  definedPhases: Phase[];
+  taskPhotos: Photo[];
   urls: Record<string, string>;
-  onViewPhoto: (startId: string) => void;
+  onViewPhoto: (phaseName: string, startId: string) => void;
 }) {
   const [uploading, setUploading] = useState(false);
+  const [addingPhase, setAddingPhase] = useState(false);
+  const [phaseDraft, setPhaseDraft] = useState("");
+  const [savingPhase, setSavingPhase] = useState(false);
+
   const photoModel = client.models.Photo as
     | typeof client.models.Photo
     | undefined;
 
+  const availableToAdd = definedPhases
+    .map((ph) => (ph.phase ?? "").trim())
+    .filter((name) => name !== "" && !taskPhases.includes(name));
+
+  const phasePhotos = activePhase
+    ? getPhotosForTaskPhase(task, activePhase, taskPhotos)
+    : [];
+
+  function openAddPhase() {
+    setPhaseDraft(availableToAdd[0] ?? "");
+    setAddingPhase(true);
+  }
+
+  async function handleAddPhase() {
+    const chosen = phaseDraft.trim();
+    if (!chosen) return;
+    if (taskPhases.includes(chosen)) {
+      onSelectPhase(chosen);
+      setAddingPhase(false);
+      return;
+    }
+    const nextPhases = orderPhaseNames([...taskPhases, chosen], definedPhases);
+    setSavingPhase(true);
+    try {
+      const { errors } = await updateTaskWithPhases({
+        id: task.id,
+        phases: nextPhases,
+      });
+      if (errors?.length) {
+        alert(
+          "Could not add phase: " + errors.map((e) => e.message).join("; ")
+        );
+        return;
+      }
+      onSelectPhase(chosen);
+      setAddingPhase(false);
+      setPhaseDraft("");
+    } catch (err: unknown) {
+      alert(
+        "Could not add phase: " +
+          (err instanceof Error ? err.message : String(err))
+      );
+    } finally {
+      setSavingPhase(false);
+    }
+  }
+
+  async function handleRemoveCurrentPhase() {
+    if (!activePhase || taskPhases.length <= 1 || phasePhotos.length > 0) return;
+    const nextPhases = taskPhases.filter((ph) => ph !== activePhase);
+    setSavingPhase(true);
+    try {
+      const { errors } = await updateTaskWithPhases({
+        id: task.id,
+        phases: nextPhases,
+      });
+      if (errors?.length) {
+        alert(
+          "Could not remove phase: " + errors.map((e) => e.message).join("; ")
+        );
+        return;
+      }
+      onSelectPhase(nextPhases[0] ?? "");
+    } catch (err: unknown) {
+      alert(
+        "Could not remove phase: " +
+          (err instanceof Error ? err.message : String(err))
+      );
+    } finally {
+      setSavingPhase(false);
+    }
+  }
+
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (!files.length || !photoModel) return;
+    if (!activePhase) {
+      alert("Please add or select a phase first.");
+      e.target.value = "";
+      return;
+    }
     setUploading(true);
     try {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const path = `photos/${task.id}/${Date.now()}-${i}-${safe}`;
+        const path = buildPhotoStoragePath(
+          task.id,
+          activePhase,
+          file.name,
+          i
+        );
         await uploadData({ path, data: file }).result;
-        const { errors } = await photoModel.create({
+        const { errors } = await createPhotoInPhase({
           taskId: task.id,
+          phase: activePhase,
           path,
           note: "",
         });
@@ -870,15 +1044,183 @@ function TaskDetails({
           <span style={{ color: "#777" }}>Task ID: </span>
           <span style={{ color: "#222" }}>{task.taskid}</span>
         </div>
-        <div>
-          <span style={{ color: "#777" }}>Phase: </span>
-          <span style={{ color: "#222" }}>{task.phase || "—"}</span>
+        <div
+          style={{
+            marginTop: 3,
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 5,
+          }}
+        >
+          <span style={{ color: "#777" }}>Phase:</span>
+          {taskPhases.length > 0 ? (
+            <select
+              value={activePhase}
+              onChange={(e) => onSelectPhase(e.target.value)}
+              aria-label="Active phase"
+              style={{
+                padding: "2px 6px",
+                fontSize: "0.73rem",
+                fontFamily: "inherit",
+                color: "#222",
+                background: "#fff",
+                border: "1px solid #cbd5e1",
+                borderRadius: 5,
+                cursor: "pointer",
+              }}
+            >
+              {taskPhases.map((ph) => {
+                const count = getPhotosForTaskPhase(
+                  task,
+                  ph,
+                  taskPhotos
+                ).length;
+                return (
+                  <option key={ph} value={ph}>
+                    {ph} ({count})
+                  </option>
+                );
+              })}
+            </select>
+          ) : (
+            <span style={{ color: "#888" }}>None</span>
+          )}
+
+          {taskPhases.length > 1 && phasePhotos.length === 0 && (
+            <button
+              type="button"
+              onClick={handleRemoveCurrentPhase}
+              disabled={savingPhase}
+              title={`Remove empty phase "${activePhase}"`}
+              aria-label={`Remove phase ${activePhase}`}
+              style={{
+                background: "transparent",
+                color: "#888",
+                border: "1px solid #e4e4e7",
+                borderRadius: 4,
+                padding: "1px 5px",
+                fontSize: "0.7rem",
+                lineHeight: 1.2,
+                cursor: savingPhase ? "default" : "pointer",
+              }}
+            >
+              ✕
+            </button>
+          )}
+
+          {!addingPhase && (
+            <button
+              type="button"
+              onClick={openAddPhase}
+              style={{
+                background: "#e8f0fe",
+                color: "#1a73e8",
+                border: "none",
+                borderRadius: 5,
+                padding: "2px 7px",
+                fontSize: "0.7rem",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              + Phase
+            </button>
+          )}
         </div>
+
+        {addingPhase && (
+          <div
+            style={{
+              marginTop: 4,
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 4,
+            }}
+          >
+            {availableToAdd.length > 0 ? (
+              <select
+                value={phaseDraft}
+                onChange={(e) => setPhaseDraft(e.target.value)}
+                style={{
+                  padding: "2px 6px",
+                  fontSize: "0.72rem",
+                  fontFamily: "inherit",
+                  background: "#fff",
+                  border: "1px solid #ccc",
+                  borderRadius: 5,
+                }}
+              >
+                {availableToAdd.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type="text"
+                value={phaseDraft}
+                onChange={(e) => setPhaseDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleAddPhase();
+                  else if (e.key === "Escape") setAddingPhase(false);
+                }}
+                placeholder="New phase name"
+                autoFocus
+                style={{
+                  width: 120,
+                  padding: "2px 6px",
+                  fontSize: "0.72rem",
+                  fontFamily: "inherit",
+                  border: "1px solid #ccc",
+                  borderRadius: 5,
+                }}
+              />
+            )}
+            <button
+              type="button"
+              onClick={handleAddPhase}
+              disabled={savingPhase || !phaseDraft.trim()}
+              style={{
+                background: "#e8f0fe",
+                color: "#1a73e8",
+                border: "none",
+                borderRadius: 5,
+                padding: "2px 7px",
+                fontSize: "0.7rem",
+                fontWeight: 600,
+                cursor:
+                  savingPhase || !phaseDraft.trim() ? "default" : "pointer",
+              }}
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => setAddingPhase(false)}
+              disabled={savingPhase}
+              style={{
+                background: "#fff",
+                color: "#555",
+                border: "1px solid #ddd",
+                borderRadius: 5,
+                padding: "2px 7px",
+                fontSize: "0.7rem",
+                fontWeight: 600,
+                cursor: savingPhase ? "default" : "pointer",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
-      {photos.length === 0 ? (
+      {phasePhotos.length === 0 ? (
         <div style={{ marginTop: 4, fontSize: "0.72rem", color: "#888" }}>
-          No photos.
+          {activePhase ? `No photos in ${activePhase}.` : "No photos."}
         </div>
       ) : (
         <div
@@ -890,7 +1232,7 @@ function TaskDetails({
             maxWidth: 268,
           }}
         >
-          {photos.map((photo) => (
+          {phasePhotos.map((photo) => (
             <figure
               key={photo.id}
               style={{
@@ -905,7 +1247,7 @@ function TaskDetails({
               {photo.path && urls[photo.path] ? (
                 <button
                   type="button"
-                  onClick={() => onViewPhoto(photo.id)}
+                  onClick={() => onViewPhoto(activePhase, photo.id)}
                   title="Open photo viewer"
                   style={{
                     display: "block",
@@ -970,7 +1312,13 @@ function TaskDetails({
       )}
 
       <label
-        title={uploading ? "Uploading…" : "Upload photo"}
+        title={
+          uploading
+            ? "Uploading…"
+            : activePhase
+              ? `Upload photo to ${activePhase}`
+              : "Add a phase first"
+        }
         aria-label="Upload photo"
         style={{
           marginTop: 6,
@@ -984,8 +1332,9 @@ function TaskDetails({
           color: "#1a73e8",
           fontSize: "0.72rem",
           fontWeight: 600,
-          cursor: uploading || !photoModel ? "default" : "pointer",
-          opacity: uploading || !photoModel ? 0.6 : 1,
+          cursor:
+            uploading || !photoModel || !activePhase ? "default" : "pointer",
+          opacity: uploading || !photoModel || !activePhase ? 0.6 : 1,
         }}
       >
         <CameraIcon />
@@ -994,7 +1343,7 @@ function TaskDetails({
           type="file"
           accept="image/*"
           multiple
-          disabled={uploading || !photoModel}
+          disabled={uploading || !photoModel || !activePhase}
           onChange={handleUpload}
           style={{ display: "none" }}
         />

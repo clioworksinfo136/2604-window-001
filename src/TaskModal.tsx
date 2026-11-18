@@ -2,6 +2,12 @@ import { useEffect, useState } from "react";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
 import PhotoModal from "./PhotoModal";
+import {
+  createTaskWithPhases,
+  getTaskPhases,
+  orderPhaseNames,
+  updateTaskWithPhases,
+} from "./taskPhases";
 
 type Task = Schema["Task"]["type"];
 type Project = Schema["Project"]["type"];
@@ -29,7 +35,7 @@ function TaskModal({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTaskId, setDraftTaskId] = useState("");
   const [draftTask, setDraftTask] = useState("");
-  const [draftPhase, setDraftPhase] = useState("");
+  const [draftPhases, setDraftPhases] = useState<string[]>([]);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [photosFor, setPhotosFor] = useState<Task | null>(null);
   const [busy, setBusy] = useState(false);
@@ -69,14 +75,21 @@ function TaskModal({
     setEditingId("new");
     setDraftTaskId(String(nextId));
     setDraftTask("");
-    setDraftPhase(phases[0]?.phase ?? "");
+    const first = (phases[0]?.phase ?? "").trim();
+    setDraftPhases(first ? [first] : []);
   }
 
   function startEdit(t: Task) {
     setEditingId(t.id);
     setDraftTaskId(String(t.taskid ?? ""));
     setDraftTask(t.task ?? "");
-    setDraftPhase(t.phase ?? "");
+    setDraftPhases(getTaskPhases(t, undefined, phases));
+  }
+
+  function toggleDraftPhase(name: string) {
+    setDraftPhases((prev) =>
+      prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name]
+    );
   }
 
   function cancel() {
@@ -89,25 +102,26 @@ function TaskModal({
       alert("Task ID must be a number.");
       return;
     }
-    if (!draftPhase.trim()) {
-      alert("Phase is required.");
+    const cleanPhases = orderPhaseNames(draftPhases, phases);
+    if (cleanPhases.length === 0) {
+      alert("Select at least one phase.");
       return;
     }
     setBusy(true);
     try {
       if (editingId === "new") {
-        await client.models.Task.create({
+        await createTaskWithPhases({
           taskid: idNum,
           task: draftTask,
-          phase: draftPhase,
+          phases: cleanPhases,
           projectId: project.id,
         });
       } else if (editingId) {
-        await client.models.Task.update({
+        await updateTaskWithPhases({
           id: editingId,
           taskid: idNum,
           task: draftTask,
-          phase: draftPhase,
+          phases: cleanPhases,
         });
       }
       setEditingId(null);
@@ -127,12 +141,11 @@ function TaskModal({
     }
   }
 
-  // Phase names, keeping the row value listed so it is never dropped.
-  const phaseNames = phases.map((p) => p.phase ?? "").filter((p) => p !== "");
-  const phaseOptions =
-    draftPhase && !phaseNames.includes(draftPhase)
-      ? [...phaseNames, draftPhase]
-      : phaseNames;
+  // Phase names, keeping any row values listed so they are never dropped.
+  const phaseNames = phases
+    .map((p) => (p.phase ?? "").trim())
+    .filter((p) => p !== "");
+  const phaseOptions = orderPhaseNames([...phaseNames, ...draftPhases], phases);
 
   const editorRow = (
     <tr>
@@ -155,18 +168,36 @@ function TaskModal({
         />
       </td>
       <td style={cell}>
-        <select
-          value={draftPhase}
-          onChange={(e) => setDraftPhase(e.target.value)}
-          style={editInput}
-        >
-          <option value="">— select —</option>
-          {phaseOptions.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+          {phaseOptions.map((name) => {
+            const checked = draftPhases.includes(name);
+            return (
+              <label
+                key={name}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "2px 7px",
+                  borderRadius: 999,
+                  border: checked ? "1px solid #1a73e8" : "1px solid #d4d4d8",
+                  background: checked ? "#e8f0fe" : "#fff",
+                  color: checked ? "#1a73e8" : "#444",
+                  fontSize: "0.78rem",
+                  cursor: "pointer",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleDraftPhase(name)}
+                  style={{ margin: 0, cursor: "pointer" }}
+                />
+                {name}
+              </label>
+            );
+          })}
+        </div>
       </td>
       <td style={{ ...cell, whiteSpace: "nowrap" }}>
         <button style={actionBtn} onClick={save} disabled={busy}>
@@ -310,7 +341,9 @@ function TaskModal({
                   <tr key={t.id}>
                     <td style={cell}>{t.taskid}</td>
                     <td style={cell}>{t.task ?? ""}</td>
-                    <td style={cell}>{t.phase ?? ""}</td>
+                    <td style={cell}>
+                      {getTaskPhases(t, undefined, phases).join(", ")}
+                    </td>
                     <td style={{ ...cell, whiteSpace: "nowrap" }}>
                       <button
                         style={actionBtn}

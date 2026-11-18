@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { getUrl, remove, uploadData } from "aws-amplify/storage";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
+import {
+  buildPhotoStoragePath,
+  createPhotoInPhase,
+  getPhotosForTaskPhase,
+  getTaskPhases,
+} from "./taskPhases";
 
 type Task = Schema["Task"]["type"];
 type Photo = Schema["Photo"]["type"];
@@ -26,7 +32,17 @@ function PhotoModal({
   );
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [selectedPhase, setSelectedPhase] = useState("");
   const resolved = useRef<Set<string>>(new Set());
+
+  const taskPhases = getTaskPhases(task, photos);
+  const activePhase =
+    selectedPhase && taskPhases.includes(selectedPhase)
+      ? selectedPhase
+      : (taskPhases[0] ?? "");
+  const visiblePhotos = activePhase
+    ? getPhotosForTaskPhase(task, activePhase, photos)
+    : photos;
 
   // The Photo model only exists once the backend has been deployed; guard so a
   // stale backend shows a message instead of crashing the app.
@@ -83,12 +99,13 @@ function PhotoModal({
     if (!files.length || !photoModel) return;
     setUploading(true);
     try {
-      for (const file of files) {
-        const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const path = `photos/${task.id}/${Date.now()}-${safe}`;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const path = buildPhotoStoragePath(task.id, activePhase, file.name, i);
         await uploadData({ path, data: file }).result;
-        await photoModel.create({
+        await createPhotoInPhase({
           taskId: task.id,
+          phase: activePhase,
           path,
           note: "",
         });
@@ -186,40 +203,80 @@ function PhotoModal({
           </button>
         </div>
 
-        <label
+        <div
           style={{
-            display: "inline-flex",
+            display: "flex",
             alignItems: "center",
-            gap: 6,
-            background: "#e8f0fe",
-            color: "#1a73e8",
-            borderRadius: 999,
-            padding: "6px 14px",
-            fontSize: "0.85rem",
-            fontWeight: 600,
-            cursor: uploading || !photoModel ? "default" : "pointer",
-            opacity: uploading || !photoModel ? 0.6 : 1,
+            flexWrap: "wrap",
+            gap: 10,
             marginBottom: 12,
           }}
         >
-          {uploading ? "Uploading…" : "+ Add photos"}
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            disabled={uploading || !photoModel}
-            onChange={handleFiles}
-            style={{ display: "none" }}
-          />
-        </label>
+          {taskPhases.length > 0 && (
+            <label
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: "0.85rem",
+                color: "#444",
+              }}
+            >
+              Phase:
+              <select
+                value={activePhase}
+                onChange={(e) => setSelectedPhase(e.target.value)}
+                style={{
+                  padding: "5px 8px",
+                  borderRadius: 6,
+                  border: "1px solid #ccc",
+                  font: "inherit",
+                  background: "#fff",
+                }}
+              >
+                {taskPhases.map((ph) => (
+                  <option key={ph} value={ph}>
+                    {ph} ({getPhotosForTaskPhase(task, ph, photos).length})
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: "#e8f0fe",
+              color: "#1a73e8",
+              borderRadius: 999,
+              padding: "6px 14px",
+              fontSize: "0.85rem",
+              fontWeight: 600,
+              cursor: uploading || !photoModel ? "default" : "pointer",
+              opacity: uploading || !photoModel ? 0.6 : 1,
+            }}
+          >
+            {uploading ? "Uploading…" : "+ Add photos"}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={uploading || !photoModel}
+              onChange={handleFiles}
+              style={{ display: "none" }}
+            />
+          </label>
+        </div>
 
         {status === "loading" && <p>Loading…</p>}
         {status === "error" && (
           <p style={{ color: "#b00020" }}>Failed to load photos: {error}</p>
         )}
-        {status === "loaded" && photos.length === 0 && (
+        {status === "loaded" && visiblePhotos.length === 0 && (
           <p style={{ color: "#666" }}>
-            No photos yet. Use “+ Add photos” to upload.
+            No photos in {activePhase || "this task"} yet. Use “+ Add photos” to
+            upload.
           </p>
         )}
 
@@ -230,7 +287,7 @@ function PhotoModal({
             gap: 12,
           }}
         >
-          {photos.map((photo) => (
+          {visiblePhotos.map((photo) => (
             <div
               key={photo.id}
               style={{

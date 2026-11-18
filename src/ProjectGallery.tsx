@@ -3,6 +3,7 @@ import { getUrl } from "aws-amplify/storage";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
 import { photoDate } from "./PhotoCarousel";
+import { getTaskPhases } from "./taskPhases";
 
 type Project = Schema["Project"]["type"];
 type Task = Schema["Task"]["type"];
@@ -309,7 +310,7 @@ function GalleryModal({
                       fontSize: "0.82rem",
                     }}
                   >
-                    {t.phase} · {mine.length} photo
+                    {getTaskPhases(t, photos).join(", ")} · {mine.length} photo
                     {mine.length === 1 ? "" : "s"}
                   </span>
                 </div>

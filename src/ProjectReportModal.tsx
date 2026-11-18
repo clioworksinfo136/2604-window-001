@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import type { Schema } from "../amplify/data/resource";
 import { photoDate } from "./PhotoCarousel";
+import {
+  getPhotoPhase,
+  getPhotosForTaskPhase,
+  getTaskPhases,
+} from "./taskPhases";
 
 type Project = Schema["Project"]["type"];
 type Task = Schema["Task"]["type"];
@@ -28,7 +33,7 @@ function ProjectReportModal({
   photos: Photo[];
   urls: Record<string, string>;
   viewerOpen: boolean;
-  onViewPhoto: (taskId: string, startId: string) => void;
+  onViewPhoto: (taskId: string, phase: string, startId: string) => void;
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -72,27 +77,32 @@ function ProjectReportModal({
   const projectTasks = tasks
     .filter((t) => t.projectId === project.id)
     .sort((a, b) => (a.taskid ?? 0) - (b.taskid ?? 0));
+  const taskById = new Map(projectTasks.map((t) => [t.id, t]));
 
   // Ordered phases from the Phase table, plus any extra phase names referenced
-  // by tasks on this project so no task's photos are ever omitted.
+  // by tasks or photos on this project so no task's photos are ever omitted.
   const phaseColumns: string[] = [];
   for (const ph of phases) {
     const name = (ph.phase ?? "").trim();
     if (name && !phaseColumns.includes(name)) phaseColumns.push(name);
   }
   for (const t of projectTasks) {
-    const name = (t.phase ?? "").trim();
-    if (name && !phaseColumns.includes(name)) phaseColumns.push(name);
+    for (const name of getTaskPhases(t, photos, phases)) {
+      if (name && !phaseColumns.includes(name)) phaseColumns.push(name);
+    }
   }
 
   const visiblePhaseColumns = phaseColumns.filter(
     (name) => !hiddenPhases.has(name)
   );
+  const visiblePhaseSet = new Set(visiblePhaseColumns);
 
-  const taskIds = new Set(projectTasks.map((t) => t.id));
-  const visibleProjectPhotos = photos.filter(
-    (p) => p.taskId && taskIds.has(p.taskId) && !hiddenPhotoIds.has(p.id)
-  );
+  const visibleProjectPhotos = photos.filter((p) => {
+    if (!p.taskId || hiddenPhotoIds.has(p.id)) return false;
+    const owner = taskById.get(p.taskId);
+    if (!owner) return false;
+    return visiblePhaseSet.has(getPhotoPhase(p, owner));
+  });
   const totalPhotos = visibleProjectPhotos.length;
   const hiddenCount = hiddenPhases.size + hiddenPhotoIds.size;
 
@@ -171,10 +181,7 @@ function ProjectReportModal({
   }
 
   function cellPhotos(task: Task, phaseName: string) {
-    if ((task.phase ?? "").trim() !== phaseName) return [];
-    return photos
-      .filter((p) => p.taskId === task.id && !hiddenPhotoIds.has(p.id))
-      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+    return getPhotosForTaskPhase(task, phaseName, visibleProjectPhotos);
   }
 
   return (
@@ -357,76 +364,83 @@ function ProjectReportModal({
                 </tr>
               </thead>
               <tbody>
-                {projectTasks.map((t, idx) => (
-                  <tr
-                    key={t.id}
-                    className="report-waterfall-row"
-                    style={{
-                      animation: "report-row-cascade 260ms ease-out both",
-                      animationDelay: `${Math.min(idx * 40, 320)}ms`,
-                    }}
-                  >
-                    <th style={rowHead}>
-                      <div>{t.task || `Task ${t.taskid}`}</div>
-                      {t.phase && (
-                        <div
-                          style={{
-                            marginTop: 2,
-                            fontWeight: 400,
-                            color: "#888",
-                            fontSize: "0.73rem",
-                          }}
-                        >
-                          {t.phase}
-                        </div>
-                      )}
-                    </th>
-                    {visiblePhaseColumns.map((phaseName) => {
-                      const isTaskPhase = (t.phase ?? "").trim() === phaseName;
-                      const mine = cellPhotos(t, phaseName);
-                      return (
-                        <td
-                          key={phaseName}
-                          style={{
-                            ...bodyCell,
-                            background: isTaskPhase ? "#f8fbff" : "#fff",
-                          }}
-                        >
-                          {!isTaskPhase ? (
-                            <span style={{ color: "#d0d0d5", fontSize: "0.75rem" }}>
-                              —
-                            </span>
-                          ) : mine.length === 0 ? (
-                            <span style={{ color: "#999", fontSize: "0.74rem" }}>
-                              No photos
-                            </span>
-                          ) : (
-                            <div
-                              style={{
-                                display: "flex",
-                                flexWrap: "wrap",
-                                gap: 8,
-                              }}
-                            >
-                              {mine.map((photo) => (
-                                <figure
-                                  key={photo.id}
-                                  style={{
-                                    margin: 0,
-                                    width: 112,
-                                    border: "1px solid #e4e4e7",
-                                    borderRadius: 8,
-                                    overflow: "hidden",
-                                    background: "#fff",
-                                  }}
-                                >
-                                  {photo.path && urls[photo.path] ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        onViewPhoto(t.id, photo.id)
-                                      }
-                                      title="Open photo viewer"
+                {projectTasks.map((t, idx) => {
+                  const taskPhases = getTaskPhases(t, photos, phases);
+                  const taskPhaseSet = new Set(taskPhases);
+                  return (
+                    <tr
+                      key={t.id}
+                      className="report-waterfall-row"
+                      style={{
+                        animation: "report-row-cascade 260ms ease-out both",
+                        animationDelay: `${Math.min(idx * 40, 320)}ms`,
+                      }}
+                    >
+                      <th style={rowHead}>
+                        <div>{t.task || `Task ${t.taskid}`}</div>
+                        {taskPhases.length > 0 && (
+                          <div
+                            style={{
+                              marginTop: 2,
+                              fontWeight: 400,
+                              color: "#888",
+                              fontSize: "0.73rem",
+                            }}
+                          >
+                            {taskPhases.join(", ")}
+                          </div>
+                        )}
+                      </th>
+                      {visiblePhaseColumns.map((phaseName) => {
+                        const isTaskPhase = taskPhaseSet.has(phaseName);
+                        const mine = cellPhotos(t, phaseName);
+                        return (
+                          <td
+                            key={phaseName}
+                            style={{
+                              ...bodyCell,
+                              background: isTaskPhase ? "#f8fbff" : "#fff",
+                            }}
+                          >
+                            {!isTaskPhase ? (
+                              <span
+                                style={{ color: "#d0d0d5", fontSize: "0.75rem" }}
+                              >
+                                —
+                              </span>
+                            ) : mine.length === 0 ? (
+                              <span
+                                style={{ color: "#999", fontSize: "0.74rem" }}
+                              >
+                                No photos
+                              </span>
+                            ) : (
+                              <div
+                                style={{
+                                  display: "flex",
+                                  flexWrap: "wrap",
+                                  gap: 8,
+                                }}
+                              >
+                                {mine.map((photo) => (
+                                  <figure
+                                    key={photo.id}
+                                    style={{
+                                      margin: 0,
+                                      width: 112,
+                                      border: "1px solid #e4e4e7",
+                                      borderRadius: 8,
+                                      overflow: "hidden",
+                                      background: "#fff",
+                                    }}
+                                  >
+                                    {photo.path && urls[photo.path] ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          onViewPhoto(t.id, phaseName, photo.id)
+                                        }
+                                        title="Open photo viewer"
                                       style={{
                                         display: "block",
                                         width: "100%",
@@ -522,8 +536,9 @@ function ProjectReportModal({
                         </td>
                       );
                     })}
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

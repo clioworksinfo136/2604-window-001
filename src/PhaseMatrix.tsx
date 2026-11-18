@@ -3,6 +3,7 @@ import { getUrl } from "aws-amplify/storage";
 import type { Schema } from "../amplify/data/resource";
 import { client } from "./client";
 import PhotoCarousel, { photoDate } from "./PhotoCarousel";
+import { getPhotosForTaskPhase, getTaskPhases } from "./taskPhases";
 
 type Project = Schema["Project"]["type"];
 type Task = Schema["Task"]["type"];
@@ -211,12 +212,9 @@ function MatrixModal({
     };
   }, [photos]);
 
-  /** Photos in a cell: a task only carries photos under its own phase. */
+  /** Photos in a cell for this (task, phase) pair. */
   function cellPhotos(task: Task, phaseName: string) {
-    if ((task.phase ?? "") !== phaseName) return [];
-    return photos
-      .filter((p) => p.taskId === task.id)
-      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+    return getPhotosForTaskPhase(task, phaseName, photos);
   }
 
   return (
@@ -312,7 +310,7 @@ function MatrixModal({
                           fontSize: "0.74rem",
                         }}
                       >
-                        {t.phase}
+                        {getTaskPhases(t, photos, phases).join(", ")}
                       </div>
                     </th>
                     {phases.map((ph) => {

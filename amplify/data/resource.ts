@@ -34,8 +34,10 @@ Task: a
     .model({
       taskid: a.integer().required(),
       task: a.string(),
-      // Phase now lives on the task rather than the project.
-      phase: a.string().required(),
+      // Ordered list of phase names associated with this task.
+      phases: a.string().array(),
+      // Legacy single-phase field kept optional so existing tasks stay readable.
+      phase: a.string(),
       // Each task belongs to exactly one project. Optional so tasks that
       // predate this relationship stay readable until they are assigned.
       projectId: a.id(),
@@ -55,6 +57,8 @@ Photo: a
       // Task this photo belongs to.
       taskId: a.id(),
       task: a.belongsTo("Task", "taskId"),
+      // Phase within the task that this photo belongs to.
+      phase: a.string(),
       // Legacy owner from when photos hung off a project. Kept, and no
       // longer required, so photos taken before the move stay readable.
       projectId: a.string(),

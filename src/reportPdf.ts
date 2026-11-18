@@ -2,6 +2,11 @@ import { downloadData } from "aws-amplify/storage";
 import { jsPDF } from "jspdf";
 import type { Schema } from "../amplify/data/resource";
 import { photoDate } from "./PhotoCarousel";
+import {
+  getPhotoPhase,
+  getPhotosForTaskPhase,
+  getTaskPhases,
+} from "./taskPhases";
 
 type Project = Schema["Project"]["type"];
 type Task = Schema["Task"]["type"];
@@ -192,14 +197,13 @@ export async function exportReportPdf({
 
   // Preload thumbnails only for photos that will actually appear in visible phase columns
   const visiblePhaseSet = new Set(visiblePhaseColumns);
-  const activeTaskIds = new Set(
-    projectTasks
-      .filter((t) => visiblePhaseSet.has((t.phase ?? "").trim()))
-      .map((t) => t.id)
-  );
-  const photosToRender = visiblePhotos.filter(
-    (p) => p.taskId && activeTaskIds.has(p.taskId)
-  );
+  const taskById = new Map(projectTasks.map((t) => [t.id, t]));
+  const photosToRender = visiblePhotos.filter((p) => {
+    if (!p.taskId) return false;
+    const owner = taskById.get(p.taskId);
+    if (!owner) return false;
+    return visiblePhaseSet.has(getPhotoPhase(p, owner));
+  });
 
   const jpegByPhotoId = new Map<string, string | null>();
   await Promise.all(
@@ -266,47 +270,64 @@ export async function exportReportPdf({
   const dateLineH = 8.5;
 
   for (const task of projectTasks) {
-    const taskPhase = (task.phase ?? "").trim();
-    const isPhaseVisible = visiblePhaseSet.has(taskPhase);
-    const mine = isPhaseVisible
-      ? visiblePhotos
-          .filter((p) => p.taskId === task.id)
-          .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
-      : [];
+    const taskPhases = getTaskPhases(task, visiblePhotos);
+    const taskPhaseSet = new Set(taskPhases);
+    const taskPhaseLabel = taskPhases.join(", ");
 
-    const preparedCards: PreparedCard[] = mine.map((photo) => {
-      const rawNote = (photo.note ?? "").trim();
-      const hasNote = rawNote.length > 0;
-      doc.setFont("helvetica", hasNote ? "normal" : "italic");
-      doc.setFontSize(7.5);
-      const noteLines = doc.splitTextToSize(
-        hasNote ? pdfText(rawNote) : "No note",
-        Math.max(24, cardW - 8)
-      ) as string[];
-      const dateText = pdfText(photoDate(photo.createdAt));
-      const captionH =
-        5 +
-        noteLines.length * noteLineH +
-        (dateText ? 2 + dateLineH : 0) +
-        5;
-      return {
-        photo,
-        jpeg: jpegByPhotoId.get(photo.id) ?? null,
-        noteLines,
-        hasNote,
-        dateText,
-        height: imgH + captionH,
-      };
-    });
+    type CardRow = { cards: PreparedCard[]; height: number };
+    const cardRowsByPhase = new Map<string, CardRow[]>();
 
-    const cardRows: { cards: PreparedCard[]; height: number }[] = [];
-    for (let i = 0; i < preparedCards.length; i += cardsPerRow) {
-      const slice = preparedCards.slice(i, i + cardsPerRow);
-      const rowH = Math.max(...slice.map((c) => c.height));
-      cardRows.push({ cards: slice, height: rowH });
+    for (const col of visiblePhaseColumns) {
+      if (!taskPhaseSet.has(col)) continue;
+      const mine = getPhotosForTaskPhase(task, col, visiblePhotos);
+      const preparedCards: PreparedCard[] = mine.map((photo) => {
+        const rawNote = (photo.note ?? "").trim();
+        const hasNote = rawNote.length > 0;
+        doc.setFont("helvetica", hasNote ? "normal" : "italic");
+        doc.setFontSize(7.5);
+        const noteLines = doc.splitTextToSize(
+          hasNote ? pdfText(rawNote) : "No note",
+          Math.max(24, cardW - 8)
+        ) as string[];
+        const dateText = pdfText(photoDate(photo.createdAt));
+        const captionH =
+          5 +
+          noteLines.length * noteLineH +
+          (dateText ? 2 + dateLineH : 0) +
+          5;
+        return {
+          photo,
+          jpeg: jpegByPhotoId.get(photo.id) ?? null,
+          noteLines,
+          hasNote,
+          dateText,
+          height: imgH + captionH,
+        };
+      });
+
+      const rows: CardRow[] = [];
+      for (let i = 0; i < preparedCards.length; i += cardsPerRow) {
+        const slice = preparedCards.slice(i, i + cardsPerRow);
+        const rowH = Math.max(...slice.map((c) => c.height));
+        rows.push({ cards: slice, height: rowH });
+      }
+      cardRowsByPhase.set(col, rows);
     }
 
-    // Split cardRows into page-fitting slices so tall rows never clip
+    const maxCardRows = Math.max(
+      0,
+      ...Array.from(cardRowsByPhase.values()).map((r) => r.length)
+    );
+
+    const bandHeightAt = (idx: number) =>
+      Math.max(
+        0,
+        ...visiblePhaseColumns.map(
+          (col) => cardRowsByPhase.get(col)?.[idx]?.height ?? 0
+        )
+      );
+
+    // Split card-row bands into page-fitting slices so tall rows never clip
     let rowIdx = 0;
     let isContinuation = false;
     do {
@@ -323,9 +344,9 @@ export async function exportReportPdf({
 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7.5);
-      const taskSubLines = taskPhase
+      const taskSubLines = taskPhaseLabel
         ? (doc.splitTextToSize(
-            pdfText(taskPhase),
+            pdfText(taskPhaseLabel),
             taskColW - cellPad * 2
           ) as string[])
         : [];
@@ -335,7 +356,7 @@ export async function exportReportPdf({
         taskNameLines.length * 10.5 +
         (taskSubLines.length > 0 ? 2 + taskSubLines.length * 9 : 0);
 
-      if (cardRows.length === 0) {
+      if (maxCardRows === 0) {
         const neededH = Math.max(28, leftTextH);
         if (cursorY + neededH > pageBottom && pageHasRows) {
           doc.addPage();
@@ -347,42 +368,41 @@ export async function exportReportPdf({
           neededH,
           taskNameLines,
           taskSubLines,
-          taskPhase,
-          []
+          taskPhaseSet,
+          cardRowsByPhase,
+          0,
+          0,
+          false
         );
         cursorY += neededH;
         pageHasRows = true;
         break;
       }
 
-      // Check if at least the first remaining cardRow fits on this page
-      const firstRowNeeded = Math.max(
-        leftTextH,
-        cellPad * 2 + cardRows[rowIdx].height
-      );
+      const firstBandH = bandHeightAt(rowIdx);
+      const firstRowNeeded = Math.max(leftTextH, cellPad * 2 + firstBandH);
       if (cursorY + firstRowNeeded > pageBottom && pageHasRows) {
         doc.addPage();
         pageHasRows = false;
         cursorY = drawTableHeader(marginTop);
       }
 
-      // Greedily pack cardRows that fit on the current page
-      const chosen: { cards: PreparedCard[]; height: number }[] = [];
+      const sliceStart = rowIdx;
       let cardsContentH = 0;
-      while (rowIdx < cardRows.length) {
-        const nextRow = cardRows[rowIdx];
-        const addH = (chosen.length > 0 ? cardGap : 0) + nextRow.height;
+      while (rowIdx < maxCardRows) {
+        const nextBandH = bandHeightAt(rowIdx);
+        const addH = (rowIdx > sliceStart ? cardGap : 0) + nextBandH;
         const candidateH = Math.max(
           leftTextH,
           cellPad * 2 + cardsContentH + addH
         );
-        if (chosen.length > 0 && cursorY + candidateH > pageBottom) {
+        if (rowIdx > sliceStart && cursorY + candidateH > pageBottom) {
           break;
         }
-        chosen.push(nextRow);
         cardsContentH += addH;
         rowIdx++;
       }
+      const sliceEnd = rowIdx;
 
       const sliceH = Math.max(28, leftTextH, cellPad * 2 + cardsContentH);
       drawTaskSlice(
@@ -390,13 +410,16 @@ export async function exportReportPdf({
         sliceH,
         taskNameLines,
         taskSubLines,
-        taskPhase,
-        chosen
+        taskPhaseSet,
+        cardRowsByPhase,
+        sliceStart,
+        sliceEnd,
+        isContinuation
       );
       cursorY += sliceH;
       pageHasRows = true;
       isContinuation = true;
-    } while (rowIdx < cardRows.length);
+    } while (rowIdx < maxCardRows);
   }
 
   function drawTaskSlice(
@@ -404,13 +427,16 @@ export async function exportReportPdf({
     rowH: number,
     taskNameLines: string[],
     taskSubLines: string[],
-    taskPhase: string,
-    chosenCardRows: { cards: PreparedCard[]; height: number }[]
+    taskPhaseSet: Set<string>,
+    cardRowsByPhase: Map<string, { cards: PreparedCard[]; height: number }[]>,
+    sliceStart: number,
+    sliceEnd: number,
+    isContinuation: boolean
   ) {
-    // Highlight the active phase cell background
+    // Highlight all associated phase cell backgrounds
     visiblePhaseColumns.forEach((col, i) => {
       const colX = marginX + taskColW + i * phaseColW;
-      if (col === taskPhase) {
+      if (taskPhaseSet.has(col)) {
         doc.setFillColor(248, 251, 255);
         doc.rect(colX, startY, phaseColW, rowH, "F");
       }
@@ -446,7 +472,7 @@ export async function exportReportPdf({
       doc.setLineWidth(0.6);
       doc.line(colX, startY, colX, startY + rowH);
 
-      if (col !== taskPhase) {
+      if (!taskPhaseSet.has(col)) {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(8);
         doc.setTextColor(200, 200, 206);
@@ -454,7 +480,10 @@ export async function exportReportPdf({
         return;
       }
 
-      if (chosenCardRows.length === 0) {
+      const allColRows = cardRowsByPhase.get(col) ?? [];
+      const chosenCardRows = allColRows.slice(sliceStart, sliceEnd);
+
+      if (allColRows.length === 0 && !isContinuation) {
         doc.setFont("helvetica", "normal");
         doc.setFontSize(8);
         doc.setTextColor(150, 150, 155);
